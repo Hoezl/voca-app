@@ -10,18 +10,18 @@ from datetime import datetime
 
 # ==========================================
 # 🔑 제미나이 API 키 설정
-GEMINI_API_KEY = "AIzaSyBcGC8fkIGtzFCI8rNRyxiRuHfP5SsP4aw"
+GEMINI_API_KEY = "AIzaSyDkkGaVQAz66GB94QCd9vuYQZEddfCJvl0"
 genai.configure(api_key=GEMINI_API_KEY)
 # ==========================================
 
-# 💡 [핵심 해결책] 오류 방지용 AI 모델 자동 전환(Fallback) 시스템
+# 💡 [최종 해결책] 어떤 에러(429, 404 등)가 나도 절대 멈추지 않는 무적의 우회 시스템
 def get_ai_response(prompt):
-    # 성공할 때까지 순서대로 시도할 모델 목록 (절대 404 에러가 나지 않는 구체적 명칭 포함)
+    # limit: 0 에러가 나는 2.0을 제외하고, 하루 1500번 무료인 1.5 위주로 재편!
     models_to_try = [
-        'gemini-2.0-flash',       # 1순위: 최신 모델 (할당량 넉넉하면 이것 먼저)
-        'gemini-1.5-flash-002',   # 2순위: 1.5버전의 가장 안정적인 구체적 명칭
-        'gemini-1.5-flash-8b',    # 3순위: 아주 가볍고 할당량이 무제한에 가까운 모델
-        'gemini-pro'              # 4순위: 구버전 서버에서도 100% 인식되는 호환 모델
+        'gemini-1.5-flash',         # 1순위: 가장 안정적이고 할당량 넉넉한 메인 모델
+        'gemini-1.5-flash-latest',  # 2순위: 1.5의 최신 버전 명칭
+        'gemini-1.5-flash-8b',      # 3순위: 속도가 아주 빠른 경량화 모델
+        'gemini-pro'                # 4순위: 구버전 서버에서도 100% 인식되는 호환 모델
     ]
     
     last_error = None
@@ -29,17 +29,14 @@ def get_ai_response(prompt):
         try:
             target_model = genai.GenerativeModel(model_name)
             response = target_model.generate_content(prompt)
-            return response # 성공하면 즉시 결과 반환
+            return response # 성공하면 즉시 결과 반환하고 종료!
         except Exception as e:
             last_error = e
-            error_msg = str(e)
-            # 할당량 초과(ResourceExhausted)나 찾을수없음(NotFound, 404) 에러면 다음 모델로 조용히 넘어감
-            if "ResourceExhausted" in error_msg or "NotFound" in error_msg or "404" in error_msg:
-                continue 
-            else:
-                raise e # 그 외의 치명적 에러면 중단
-                
-    raise Exception(f"모든 AI 모델 시도 실패. 마지막 에러: {last_error}")
+            # 에러 내용이 무엇이든 따지지 않고 무조건 다음 모델로 조용히 넘어갑니다.
+            continue 
+            
+    # 4개 모델이 전부 다 실패했을 때만 에러를 띄웁니다.
+    raise Exception(f"모든 AI 모델 접근 실패. (마지막 에러: {last_error})")
 
 VOCAB_FILE = 'my_vocab_web.csv'
 
@@ -96,9 +93,9 @@ if menu == "🤖 AI 단어 생성":
         [형식]: 영단어;[발음기호];품사 : 뜻;실전 출제 스타일 예문
         """
         
-        with st.spinner("AI가 가장 적합한 모델을 찾아 단어를 생성 중입니다..."):
+        with st.spinner("AI가 최적의 서버를 찾아 단어를 생성 중입니다..."):
             try:
-                # ⭐️ 여기서 무적의 자동 우회 함수 사용!
+                # 무적 우회 함수 호출
                 response = get_ai_response(prompt)
                 lines = response.text.strip().split('\n')
                 
@@ -130,7 +127,7 @@ elif menu == "✨ 단어 일괄 추가":
             prompt = f"단어: {words_input}\n[형식]: 영단어;[발음기호];품사 : 뜻;실전 예문 (강세기호 생략, 번호 금지)"
             with st.spinner("분석 중..."):
                 try:
-                    # ⭐️ 여기서 무적의 자동 우회 함수 사용!
+                    # 무적 우회 함수 호출
                     response = get_ai_response(prompt)
                     lines = response.text.strip().split('\n')
                     new_rows = []
