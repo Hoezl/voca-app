@@ -9,7 +9,7 @@ import random
 from datetime import datetime
 
 # ==========================================
-# 🔑 제미나이 API 키 설정
+# 🔑 새로 발급받은 제미나이 API 키를 넣어주세요!
 GEMINI_API_KEY = "AIzaSyBcGC8fkIGtzFCI8rNRyxiRuHfP5SsP4aw"
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash') 
@@ -89,9 +89,7 @@ if menu == "🤖 AI 단어 생성":
                     save_data(df)
                     st.success(f"🎉 {len(new_rows)}개의 단어가 성공적으로 추가되었습니다!")
             except Exception as e:
-                # 에러의 진짜 이유를 화면에 출력하도록 변경
                 st.error(f"❌ 생성 중 오류가 발생했습니다. (상세 원인: {e})")
-                st.info("API 키가 오래되었거나 권한이 없을 수 있습니다. 구글 AI Studio에서 새 API 키를 발급받아 교체해 보세요.")
 
 # ----------------- ✨ 수동 일괄 추가 -----------------
 elif menu == "✨ 단어 일괄 추가":
@@ -213,7 +211,7 @@ elif menu == "📊 학습 통계":
         stats = df.groupby(['Category', 'Level']).size().reset_index(name='Count')
         st.dataframe(stats, hide_index=True, use_container_width=True)
 
-# ----------------- 📚 영어 기초 가이드 (모바일 최적화 표) -----------------
+# ----------------- 📚 영어 기초 가이드 -----------------
 elif menu == "📚 영어 기초 가이드":
     st.header("📚 기초 영어 완벽 가이드")
     st.caption("영포자도 이해할 수 있는 원리 위주의 핵심 가이드입니다.")
@@ -222,7 +220,6 @@ elif menu == "📚 영어 기초 가이드":
     
     with tab1:
         st.subheader("🗣️ 영어 발음 기호표 (IPA)")
-        # 모바일에서 표가 잘리지 않도록 스크롤 div 추가
         st.markdown('<div style="overflow-x: auto;">', unsafe_allow_html=True)
         st.markdown("""
         | 번호 | 발음기호 | 소리 | 번호 | 발음기호 | 소리 | 번호 | 발음기호 | 소리 |
@@ -363,4 +360,18 @@ elif menu == "📚 영어 기초 가이드":
 
         **■ 2. 분사 (현재분사 vs 과거분사)**
         동사를 형용사로 변신시킴.
-        * **현재분사 (-ing)**: 능동/진행. "a
+        * **현재분사 (-ing)**: 능동/진행. "a sleeping baby" (자고 있는 아기)
+        * **과거분사 (p.p)**: 수동/완료. "a broken window" (누군가에 깨진 창문)
+
+        **■ 3. 관계대명사 (who, which, that)**
+        문장을 두 번 말하기 귀찮을 때, 선행사(명사) 뒤에 접착제를 붙여 문장으로 길게 설명.
+        * "I saw the man **who** was running."
+
+        **■ 4. 수동태 (be동사 + p.p)**
+        주어가 행동을 '당할 때', 또는 행위자보다 당한 대상이 중요할 때 사용.
+        * "My car **was stolen**."
+
+        **■ 5. 간접의문문**
+        의문문이 다른 문장 속으로 쏙 들어갈 때. 진짜 질문이 아니므로 어순이 평서문으로 바뀜.
+        * 간접: I don't know **who he is**. (의문사+주어+동사)
+        """)
