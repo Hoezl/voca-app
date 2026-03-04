@@ -40,7 +40,6 @@ def load_data(file_path):
 def save_data(df, file_path):
     df.to_csv(file_path, index=False, encoding='utf-8-sig')
 
-# ⭐️ 1. 무한 재생 가능한 투명 듣기 버튼 로직 (사운드바 완전 제거)
 def speak(text):
     pure_text = text.split('[')[0].strip()
     try:
@@ -48,7 +47,6 @@ def speak(text):
         tts.save("temp.mp3")
         with open("temp.mp3", "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
-            # 매번 새로운 오디오로 강제 인식시켜 무한 재생 버그 해결!
             unique_id = random.randint(1, 10000000)
             html_code = f"""
                 <audio autoplay>
@@ -60,7 +58,6 @@ def speak(text):
     except Exception:
         pass 
 
-# ⭐️ 2. 1초 / 2.3초 간격 정밀 연속 듣기 로직
 def play_sequence_audio(words):
     audio_data_list = []
     for w in words:
@@ -91,11 +88,11 @@ def play_sequence_audio(words):
             player.onended = function() {{
                 playCount++;
                 if(playCount < 3) {{
-                    setTimeout(playNext, 1000); // 1초 대기 (같은 단어)
+                    setTimeout(playNext, 1000); 
                 }} else {{
                     playCount = 0;
                     currentWordIdx++;
-                    setTimeout(playNext, 2300); // 2.3초 대기 (다음 단어)
+                    setTimeout(playNext, 2300); 
                 }}
             }};
         }}
@@ -139,7 +136,6 @@ if menu == "🤖 AI 단어 생성":
 
     if st.button("🚀 단어 생성 시작"):
         existing_words = ", ".join(df['Word'].tolist())
-        # ⭐️ 품사가 여러 개일 경우 모두 포함하도록 프롬프트 수정
         prompt = f"""
         당신은 1타 영어 강사입니다.
         분야: {category} / 난이도: {level} / {count}개 생성.
@@ -241,7 +237,6 @@ elif menu in ["📖 단어 관리", "📅 학습 기록"]:
                 st.write(f"📅 추가일: {row['Date']}")
                 st.markdown(f"📝 **예문:** {row['Example'].replace(row['Word'], f'**:green[{row['Word']}]**')}")
                 
-                # ⭐️ 단어 개별 제어 버튼 (고정 키를 사용하여 완벽 동작 보장)
                 c1, c2, c3 = st.columns(3)
                 if c1.button("🔊 듣기", key=f"btn_listen_{idx}"):
                     speak(row['Word']) 
@@ -274,7 +269,7 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
         else:
             st.warning("학습 중인 단어가 없습니다.")
     else:
-        # 중복 방지를 위해 전체 문제를 리스트(Queue)에 담아두고 하나씩 빼는 방식
+        # 문제 목록 생성 및 초기화
         if 'test_menu' not in st.session_state or st.session_state.test_menu != menu:
             st.session_state.test_menu = menu
             st.session_state.prev_result = None
@@ -283,8 +278,12 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
             queue = current_pool['Word'].tolist()
             random.shuffle(queue)
             st.session_state.test_queue = queue
+            
+            # ⭐️ [버그 해결 핵심] 모드가 멋대로 바뀌지 않게 고정 기록 변수 생성
+            if 'current_test_mode' in st.session_state:
+                del st.session_state.current_test_mode
 
-        # 방금 푼 문제 결과 피드백 (딱 한 번만 발음 재생)
+        # 방금 푼 문제 결과 피드백
         if st.session_state.prev_result:
             res = st.session_state.prev_result
             if res['correct']:
@@ -299,7 +298,7 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
 
         st.divider()
 
-        # ⭐️ 문제가 다 끝났을 때
+        # 문제가 다 끝났을 때
         if not st.session_state.test_queue:
             st.success("🎉 준비된 모든 단어의 테스트가 끝났습니다! 정말 고생하셨습니다.")
             if st.button("🔄 처음부터 다시 풀기"):
@@ -307,12 +306,17 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                 random.shuffle(queue)
                 st.session_state.test_queue = queue
                 st.session_state.prev_result = None
+                if 'current_test_mode' in st.session_state:
+                    del st.session_state.current_test_mode
                 st.rerun()
         else:
-            # ⭐️ 다음 문제 출제
+            # ⭐️ 제출 중에 모드가 바뀌지 않도록 현재 문제의 모드를 세션에 단단히 고정
+            if 'current_test_mode' not in st.session_state:
+                st.session_state.current_test_mode = random.choice(['E2K', 'K2E'])
+            test_mode = st.session_state.current_test_mode
+
             current_word_str = st.session_state.test_queue[0]
             word_info = current_pool[current_pool['Word'] == current_word_str].iloc[0]
-            test_mode = random.choice(['E2K', 'K2E'])
 
             st.write(f"📝 남은 문제: {len(st.session_state.test_queue)}개")
             if test_mode == 'E2K':
@@ -322,12 +326,11 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                 st.subheader(f"Q: {word_info['Meaning']}")
                 st.caption("해당하는 영어 단어는?")
 
-            # ⭐️ 엔터키 고장을 막기 위해 st.form 도입! (엔터 치면 무조건 제출)
             with st.form(key=f"test_form_{current_word_str}", clear_on_submit=True):
                 ans = st.text_input("✍️ 정답을 입력하고 엔터(Enter)를 누르세요.")
                 submitted = st.form_submit_button("제출")
                 
-                # 타자 칠 때 클릭하지 않아도 포커스가 자동 이동하도록 설정
+                # 자동 포커스
                 components.html(
                     """
                     <script>
@@ -340,19 +343,19 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                 if submitted and ans:
                     correct = False
                     
-                    # ⭐️ 3. 천사 같은 채점 로직 (공백, 쉼표, 기호, 품사태그 무시)
+                    # ⭐️ 천사 같은 채점 로직
                     if test_mode == 'E2K':
-                        # 한국어 뜻 맞추기 (사용자가 '물주다'라고 치든, '물'이라고 치든 뜻 안에 있으면 정답)
-                        clean_ans = ans.replace(" ", "").replace(",", "").replace("/", "").replace("(", "").replace(")", "")
-                        clean_meaning = word_info['Meaning'].replace(" ", "")
-                        pos_tags = ["명사:", "동사:", "대명사:", "형용사:", "부사:", "전치사:", "접속사:", "감탄사:", "명사", "동사", "대명사", "형용사", "부사", "전치사", "접속사", "감탄사"]
+                        # 한국어 채점: 기호, 공백, 품사 태그 싹 무시하고 의미만 맞으면 정답
+                        clean_ans = re.sub(r'[\s\(\)\[\]\,\/]', '', ans)
+                        clean_meaning = re.sub(r'[\s\(\)\[\]\,\/]', '', word_info['Meaning'])
+                        pos_tags = ["명사", "동사", "대명사", "형용사", "부사", "전치사", "접속사", "감탄사", ":"]
                         for tag in pos_tags:
                             clean_meaning = clean_meaning.replace(tag, "")
                         
-                        if clean_ans in clean_meaning:
+                        if clean_ans and clean_ans in clean_meaning:
                             correct = True
                     else:
-                        # 영어 단어 맞추기 (대소문자 무시, 알파벳 외 기호 완전 무시)
+                        # 영어 채점: 대소문자 무시, 알파벳만 비교 (water == Water 무조건 정답)
                         clean_ans = re.sub(r'[^a-zA-Z]', '', ans).lower()
                         clean_word = re.sub(r'[^a-zA-Z]', '', word_info['Word']).lower()
                         if clean_ans == clean_word:
@@ -369,7 +372,7 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                             wrong_df = pd.concat([wrong_df, new_wrong], ignore_index=True)
                             save_data(wrong_df, WRONG_FILE)
 
-                    # 결과 저장 후 대기열에서 제거
+                    # 결과 저장 후 대기열에서 제거 & 모드 초기화
                     st.session_state.prev_result = {
                         'correct': correct, 'word': word_info['Word'],
                         'meaning': word_info['Meaning'], 'example': word_info['Example'],
@@ -377,6 +380,7 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                     }
                     st.session_state.audio_played = False
                     st.session_state.test_queue.pop(0) 
+                    del st.session_state.current_test_mode # 다음 문제를 위해 모드 삭제
                     st.rerun()
 
 # ----------------- 📊 학습 통계 -----------------
@@ -565,7 +569,7 @@ elif menu == "📚 영어 기초 가이드":
         * **불가산명사 (셀 수 없음)**: 액체나 덩어리, 안보이는 개념. `a`나 `-s`를 붙일 수 없습니다. (예: `water`, `information`, `money`)
 
         **■ 2. 만능 단어 'it'의 3가지 쓰임**
-        * **지시대명사**: 앞서 말한 그것. "Where is 대 book? **It** is on the desk."
+        * **지시대명사**: 앞서 말한 그것. "Where is my book? **It** is on the desk."
         * **비인칭주어**: 시간/날씨/거리에서 자리만 채움 (해석 안함). "**It** is raining."
         * **가주어**: 진짜 주어가 길어서 뒤로 빼고 빈자리를 채움. "**It** is hard to master English."
 
@@ -598,7 +602,7 @@ elif menu == "📚 영어 기초 가이드":
 
         **■ 3. 조동사 (추측/의무/used to)**
         * **추측**: must (99% 확신), may (50%), cannot (~일 리 없다)
-        * **의무**: must / have to (강제), should (부드러운 조언)
+        * **의무**: must / have to (강제), 시ould (부드러운 조언)
         * **used to**: 과거엔 했지만 '지금은 절대 안 해!'라는 뉘앙스. "I used to smoke."
         """)
 
