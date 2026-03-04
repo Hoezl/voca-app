@@ -14,29 +14,35 @@ GEMINI_API_KEY = "AIzaSyDkkGaVQAz66GB94QCd9vuYQZEddfCJvl0"
 genai.configure(api_key=GEMINI_API_KEY)
 # ==========================================
 
-# 💡 [최종 해결책] 어떤 에러(429, 404 등)가 나도 절대 멈추지 않는 무적의 우회 시스템
+# 💡 [최종 해결책] 구글 서버에 직접 접속 가능한 모델을 물어보고 자동 선택하는 시스템!
 def get_ai_response(prompt):
-    # limit: 0 에러가 나는 2.0을 제외하고, 하루 1500번 무료인 1.5 위주로 재편!
-    models_to_try = [
-        'gemini-1.5-flash',         # 1순위: 가장 안정적이고 할당량 넉넉한 메인 모델
-        'gemini-1.5-flash-latest',  # 2순위: 1.5의 최신 버전 명칭
-        'gemini-1.5-flash-8b',      # 3순위: 속도가 아주 빠른 경량화 모델
-        'gemini-pro'                # 4순위: 구버전 서버에서도 100% 인식되는 호환 모델
-    ]
-    
-    last_error = None
-    for model_name in models_to_try:
-        try:
-            target_model = genai.GenerativeModel(model_name)
-            response = target_model.generate_content(prompt)
-            return response # 성공하면 즉시 결과 반환하고 종료!
-        except Exception as e:
-            last_error = e
-            # 에러 내용이 무엇이든 따지지 않고 무조건 다음 모델로 조용히 넘어갑니다.
-            continue 
-            
-    # 4개 모델이 전부 다 실패했을 때만 에러를 띄웁니다.
-    raise Exception(f"모든 AI 모델 접근 실패. (마지막 에러: {last_error})")
+    try:
+        # 1. 내 API 키로 쓸 수 있는 모든 모델 목록을 구글에서 가져옵니다.
+        available_models = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                available_models.append(m.name)
+        
+        if not available_models:
+            raise Exception("이 API 키로 텍스트를 생성할 수 있는 권한이 없습니다.")
+
+        # 2. 가져온 목록 중 가장 가볍고 무료 할당량이 많은 '1.5-flash' 계열을 1순위로 찾습니다.
+        target_model_name = None
+        for name in available_models:
+            if '1.5-flash' in name:
+                target_model_name = name
+                break
+        
+        # 만약 flash 모델이 없다면, 구글이 허락한 첫 번째 모델을 무조건 씁니다.
+        if not target_model_name:
+            target_model_name = available_models[0]
+
+        # 3. 알아낸 정확한 이름으로 단어 생성을 지시합니다.
+        target_model = genai.GenerativeModel(target_model_name)
+        return target_model.generate_content(prompt)
+
+    except Exception as e:
+        raise Exception(f"AI 자동 탐지 및 생성 실패: {str(e)}")
 
 VOCAB_FILE = 'my_vocab_web.csv'
 
@@ -93,9 +99,9 @@ if menu == "🤖 AI 단어 생성":
         [형식]: 영단어;[발음기호];품사 : 뜻;실전 출제 스타일 예문
         """
         
-        with st.spinner("AI가 최적의 서버를 찾아 단어를 생성 중입니다..."):
+        with st.spinner("AI가 최적의 서버를 스캔하여 단어를 생성 중입니다..."):
             try:
-                # 무적 우회 함수 호출
+                # 무적 탐지 함수 호출
                 response = get_ai_response(prompt)
                 lines = response.text.strip().split('\n')
                 
@@ -116,7 +122,7 @@ if menu == "🤖 AI 단어 생성":
                     save_data(df)
                     st.success(f"🎉 {len(new_rows)}개의 단어가 성공적으로 추가되었습니다!")
             except Exception as e:
-                st.error(f"❌ 생성 중 오류가 발생했습니다.\n에러 원인: {e}")
+                st.error(f"❌ 생성 중 오류가 발생했습니다.\n{e}")
 
 # ----------------- ✨ 수동 일괄 추가 -----------------
 elif menu == "✨ 단어 일괄 추가":
@@ -127,7 +133,7 @@ elif menu == "✨ 단어 일괄 추가":
             prompt = f"단어: {words_input}\n[형식]: 영단어;[발음기호];품사 : 뜻;실전 예문 (강세기호 생략, 번호 금지)"
             with st.spinner("분석 중..."):
                 try:
-                    # 무적 우회 함수 호출
+                    # 무적 탐지 함수 호출
                     response = get_ai_response(prompt)
                     lines = response.text.strip().split('\n')
                     new_rows = []
@@ -146,7 +152,7 @@ elif menu == "✨ 단어 일괄 추가":
                         save_data(df)
                         st.success("추가 완료!")
                 except Exception as e:
-                    st.error(f"❌ 분석 중 오류가 발생했습니다.\n에러 원인: {e}")
+                    st.error(f"❌ 분석 중 오류가 발생했습니다.\n{e}")
 
 # ----------------- 📖 단어 관리 / 학습 기록 -----------------
 elif menu in ["📖 단어 관리", "📅 학습 기록"]:
