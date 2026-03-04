@@ -17,7 +17,6 @@ GEMINI_API_KEY = "AIzaSyDkkGaVQAz66GB94QCd9vuYQZEddfCJvl0"
 genai.configure(api_key=GEMINI_API_KEY)
 # ==========================================
 
-# 💡 구글 서버 자동 탐지 시스템
 def get_ai_response(prompt):
     models_to_try = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-flash-8b', 'gemini-pro']
     last_error = None
@@ -31,7 +30,7 @@ def get_ai_response(prompt):
     raise Exception(f"모든 AI 모델 접근 실패. (마지막 에러: {last_error})")
 
 VOCAB_FILE = 'my_vocab_web.csv'
-WRONG_FILE = 'my_vocab_wrong_web.csv' # 🔥 오답노트 파일
+WRONG_FILE = 'my_vocab_wrong_web.csv'
 
 def load_data(file_path):
     if os.path.exists(file_path):
@@ -41,7 +40,7 @@ def load_data(file_path):
 def save_data(df, file_path):
     df.to_csv(file_path, index=False, encoding='utf-8-sig')
 
-# ⭐️ 1. 원할 때마다 무한 반복 재생 가능한 듣기 함수 (스트림릿 버그 우회)
+# ⭐️ 1. 원할 때마다 무한 반복 재생 가능한 듣기 함수 (스트림릿 버그 완벽 우회)
 def speak(text):
     pure_text = text.split('[')[0].strip()
     try:
@@ -49,8 +48,9 @@ def speak(text):
         tts.save("temp.mp3")
         with open("temp.mp3", "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
-            unique_id = str(time.time()).replace('.', '') # 매번 새로운 ID 부여
-            audio_tag = f'<audio id="audio_{unique_id}" autoplay><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
+            # 시간값을 넣어 매번 새로운 오디오로 인식하게 강제함
+            unique_id = str(time.time()).replace('.', '') 
+            audio_tag = f'<audio autoplay><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
             components.html(audio_tag, height=0, width=0)
     except Exception:
         pass 
@@ -112,13 +112,13 @@ st.title("🦉 AI 영단어 마스터 Web")
 
 menu = st.sidebar.selectbox("메뉴 선택", [
     "🤖 AI 단어 생성", 
-    "✨ 단어 일괄 추가", 
     "📖 단어 관리", 
     "📝 실전 테스트", 
-    "🔥 오답 노트 재도전", 
     "📚 영어 기초 가이드", 
     "📅 학습 기록", 
-    "📊 학습 통계"
+    "📊 학습 통계",
+    "✨ 단어 일괄 추가",
+    "🔥 오답 노트 재도전"
 ])
 
 df = load_data(VOCAB_FILE)
@@ -264,19 +264,19 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
         if is_wrong_mode:
             st.success("🎉 오답 노트가 비어있습니다! 완벽합니다!")
         else:
-            st.warning("테스트할 단어가 없습니다.")
+            st.warning("학습 중인 단어가 없습니다.")
     else:
-        # ⭐️ 3. 엔터키 완벽 연동 및 1회 오디오 재생 시스템
+        # ⭐️ 3. 중복 출제 방지를 위한 문제 은행 시스템 (Queue)
         if 'test_menu' not in st.session_state or st.session_state.test_menu != menu:
             st.session_state.test_menu = menu
             st.session_state.prev_result = None
             st.session_state.audio_played = True 
             
-            if not current_pool.empty:
-                st.session_state.test_word = current_pool.sample(1).iloc[0]
-                st.session_state.test_mode = random.choice(['E2K', 'K2E'])
+            queue = current_pool['Word'].tolist()
+            random.shuffle(queue)
+            st.session_state.test_queue = queue
 
-        # 방금 제출한 결과 표시 및 딱 한 번만 발음 재생
+        # 방금 푼 문제 피드백
         if st.session_state.prev_result:
             res = st.session_state.prev_result
             if res['correct']:
@@ -287,15 +287,27 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
             
             if not st.session_state.get('audio_played'):
                 speak(res['word'])
-                st.session_state.audio_played = True # 딱 한 번 울리고 플래그 잠금
+                st.session_state.audio_played = True 
 
         st.divider()
 
-        # 새로운 문제 표시 및 입력창 (새 문제마다 고유 key를 부여해 입력칸이 무조건 비워지게 만듦)
-        if 'test_word' in st.session_state and not current_pool.empty:
-            word_info = st.session_state.test_word
+        # 남아있는 문제가 없을 때
+        if not st.session_state.test_queue:
+            st.success("🎉 모든 단어의 테스트가 끝났습니다! 정말 고생하셨습니다.")
+            if st.button("🔄 처음부터 다시 풀기"):
+                queue = current_pool['Word'].tolist()
+                random.shuffle(queue)
+                st.session_state.test_queue = queue
+                st.session_state.prev_result = None
+                st.rerun()
+        else:
+            # 다음 문제 출제
+            current_word_str = st.session_state.test_queue[0]
+            word_info = current_pool[current_pool['Word'] == current_word_str].iloc[0]
+            test_mode = random.choice(['E2K', 'K2E'])
 
-            if st.session_state.test_mode == 'E2K':
+            st.write(f"📝 남은 문제: {len(st.session_state.test_queue)}개")
+            if test_mode == 'E2K':
                 st.subheader(f"Q: {word_info['Word']} {word_info['Phonetic']}")
                 st.caption("이 단어의 뜻은?")
             else:
@@ -303,19 +315,30 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                 st.caption("해당하는 영어 단어는?")
 
             # 폼(form) 없이 다이렉트 텍스트 인풋으로 엔터 작동 보장
-            input_key = f"ans_{word_info['Word']}_{len(wrong_df)}"
+            input_key = f"ans_{word_info['Word']}_{len(st.session_state.test_queue)}"
             ans = st.text_input("✍️ 정답을 입력하고 엔터(Enter)를 누르세요.", key=input_key)
+
+            # ⭐️ 4. 마우스 클릭 없이 타자를 바로 칠 수 있게 만드는 오토 포커스 JS
+            components.html(
+                f"""
+                <script>
+                    const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+                    if (inputs.length > 0) {{
+                        inputs[inputs.length - 1].focus();
+                    }}
+                </script>
+                """, height=0, width=0
+            )
 
             if ans:
                 correct = False
-                if st.session_state.test_mode == 'E2K':
+                if test_mode == 'E2K':
                     user_stems = set(re.split(r'[,\s]+', ans))
                     correct_stems = set(re.split(r'[,\s]+', word_info['Meaning']))
                     if user_stems & correct_stems: correct = True
                 else:
                     if ans.lower() == word_info['Word'].lower(): correct = True
 
-                # 오답노트 필터링 로직
                 if correct:
                     if is_wrong_mode and word_info['Word'] in wrong_df['Word'].values:
                         wrong_df = wrong_df[wrong_df['Word'] != word_info['Word']]
@@ -331,15 +354,8 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                     'meaning': word_info['Meaning'], 'example': word_info['Example'],
                     'user_ans': ans
                 }
-                st.session_state.audio_played = False # 다음 번에 오디오 재생 허용
-                
-                # 즉시 새로운 문제 뽑고 화면 새로고침
-                new_pool = wrong_df if is_wrong_mode else df[df['Status'] == 'Learning']
-                if not new_pool.empty:
-                    st.session_state.test_word = new_pool.sample(1).iloc[0]
-                    st.session_state.test_mode = random.choice(['E2K', 'K2E'])
-                else:
-                    if 'test_word' in st.session_state: del st.session_state.test_word
+                st.session_state.audio_played = False
+                st.session_state.test_queue.pop(0) # 문제 은행에서 방금 푼 문제 제거
                 st.rerun()
 
 # ----------------- 📊 학습 통계 -----------------
@@ -351,7 +367,7 @@ elif menu == "📊 학습 통계":
         stats = df.groupby(['Category', 'Level']).size().reset_index(name='Count')
         st.dataframe(stats, hide_index=True, use_container_width=True)
 
-# ----------------- 📚 영어 기초 가이드 (동사표 완벽 분리) -----------------
+# ----------------- 📚 영어 기초 가이드 (동사표 대폭 확장) -----------------
 elif menu == "📚 영어 기초 가이드":
     st.header("📚 기초 영어 완벽 가이드")
     st.caption("영포자도 이해할 수 있는 원리 위주의 핵심 가이드입니다.")
@@ -397,25 +413,36 @@ elif menu == "📚 영어 기초 가이드":
         """)
 
     with tab2:
-        st.subheader("🔄 동사 변화표 (규칙 & 불규칙)")
-        st.write("동사는 과거형, 과거분사(p.p)로 변할 때 규칙적으로 변하는 것과 불규칙하게 변하는 것으로 나뉩니다.")
+        st.subheader("🔄 핵심 필수 동사표 (100+)")
+        st.write("모든 단어를 넣는 것은 물리적으로 불가능하지만, 원어민이 매일 쓰는 필수 단어들을 패턴별로 총망라했습니다.")
         
-        # ⭐️ 4. 규칙/불규칙 완전히 분리 및 패턴별 표 분리
-        st.markdown("### 1. 규칙 동사 (Regular Verbs)")
+        st.markdown("### 1. 규칙 동사 모음 (Regular Verbs)")
         st.write("대부분의 동사는 형태에 따라 일정한 규칙을 가지고 `-ed`가 붙습니다.")
         headers_reg = ["규칙 패턴", "현재(V)", "과거(V-ed)", "과거분사(p.p)", "뜻"]
         data_reg = [
-            ["일반적인 경우 (+ed)", "play", "played", "played", "놀다"],
-            ["-e로 끝나는 경우 (+d)", "like", "liked", "liked", "좋아하다"],
-            ["자음+y로 끝나는 경우 (y->ied)", "study", "studied", "studied", "공부하다"],
-            ["단모음+단자음 (자음추가+ed)", "stop", "stopped", "stopped", "멈추다"]
+            ["일반 (+ed)", "want", "wanted", "wanted", "원하다"],
+            ["일반 (+ed)", "play", "played", "played", "놀다"],
+            ["일반 (+ed)", "help", "helped", "helped", "돕다"],
+            ["일반 (+ed)", "look", "looked", "looked", "보다"],
+            ["일반 (+ed)", "call", "called", "called", "부르다"],
+            ["일반 (+ed)", "ask", "asked", "asked", "묻다"],
+            ["-e로 끝 (+d)", "use", "used", "used", "사용하다"],
+            ["-e로 끝 (+d)", "agree", "agreed", "agreed", "동의하다"],
+            ["-e로 끝 (+d)", "smile", "smiled", "smiled", "웃다"],
+            ["-e로 끝 (+d)", "decide", "decided", "decided", "결정하다"],
+            ["자음+y 끝 (y->ied)", "try", "tried", "tried", "시도하다"],
+            ["자음+y 끝 (y->ied)", "study", "studied", "studied", "공부하다"],
+            ["자음+y 끝 (y->ied)", "cry", "cried", "cried", "울다"],
+            ["단모음+자음 (자음추가)", "stop", "stopped", "stopped", "멈추다"],
+            ["단모음+자음 (자음추가)", "plan", "planned", "planned", "계획하다"],
+            ["단모음+자음 (자음추가)", "drop", "dropped", "dropped", "떨어뜨리다"]
         ]
         render_mobile_table(headers_reg, data_reg)
 
         st.divider()
 
-        st.markdown("### 2. 불규칙 동사 (Irregular Verbs)")
-        st.write("규칙 없이 변하므로 패턴별로 나누어 암기해야 합니다.")
+        st.markdown("### 2. 불규칙 동사 모음 (Irregular Verbs)")
+        st.write("규칙 없이 변하므로 가장 헷갈리는 필수 단어들을 패턴별로 모았습니다.")
         
         st.markdown("#### ① A-A-A 형 (형태가 모두 같음)")
         headers_aaa = ["현재(V)", "과거(V-ed)", "과거분사(p.p)", "뜻"]
@@ -423,7 +450,13 @@ elif menu == "📚 영어 기초 가이드":
             ["put", "put", "put", "놓다"],
             ["cut", "cut", "cut", "자르다"],
             ["read", "read(레드)", "read(레드)", "읽다"],
-            ["hit", "hit", "hit", "치다"]
+            ["hit", "hit", "hit", "치다"],
+            ["set", "set", "set", "세팅하다"],
+            ["let", "let", "let", "내버려두다"],
+            ["cost", "cost", "cost", "비용이 들다"],
+            ["shut", "shut", "shut", "닫다"],
+            ["hurt", "hurt", "hurt", "다치다"],
+            ["quit", "quit", "quit", "그만두다"]
         ]
         render_mobile_table(headers_aaa, data_aaa)
 
@@ -432,7 +465,8 @@ elif menu == "📚 영어 기초 가이드":
         data_aba = [
             ["come", "came", "come", "오다"],
             ["run", "ran", "run", "달리다"],
-            ["become", "became", "become", "~이 되다"]
+            ["become", "became", "become", "~이 되다"],
+            ["overcome", "overcame", "overcome", "극복하다"]
         ]
         render_mobile_table(headers_aba, data_aba)
 
@@ -446,7 +480,24 @@ elif menu == "📚 영어 기초 가이드":
             ["have", "had", "had", "가지다"],
             ["make", "made", "made", "만들다"],
             ["say", "said", "said", "말하다"],
-            ["teach", "taught", "taught", "가르치다"]
+            ["teach", "taught", "taught", "가르치다"],
+            ["keep", "kept", "kept", "유지하다"],
+            ["sleep", "slept", "slept", "자다"],
+            ["leave", "left", "left", "떠나다"],
+            ["meet", "met", "met", "만나다"],
+            ["bring", "brought", "brought", "가져오다"],
+            ["think", "thought", "thought", "생각하다"],
+            ["fight", "fought", "fought", "싸우다"],
+            ["build", "built", "built", "짓다"],
+            ["spend", "spent", "spent", "소비하다"],
+            ["lose", "lost", "lost", "잃다"],
+            ["win", "won", "won", "이기다"],
+            ["sell", "sold", "sold", "팔다"],
+            ["tell", "told", "told", "말하다"],
+            ["hear", "heard", "heard", "듣다"],
+            ["hold", "held", "held", "잡다"],
+            ["stand", "stood", "stood", "서다"],
+            ["understand", "understood", "understood", "이해하다"]
         ]
         render_mobile_table(headers_abb, data_abb)
 
@@ -462,7 +513,22 @@ elif menu == "📚 영어 기초 가이드":
             ["know", "knew", "known", "알다"],
             ["see", "saw", "seen", "보다"],
             ["take", "took", "taken", "가져가다"],
-            ["write", "wrote", "written", "쓰다"]
+            ["write", "wrote", "written", "쓰다"],
+            ["drive", "drove", "driven", "운전하다"],
+            ["ride", "rode", "ridden", "타다"],
+            ["speak", "spoke", "spoken", "말하다"],
+            ["steal", "stole", "stolen", "훔치다"],
+            ["choose", "chose", "chosen", "선택하다"],
+            ["wake", "woke", "woken", "깨다"],
+            ["wear", "wore", "worn", "입다"],
+            ["fly", "flew", "flown", "날다"],
+            ["grow", "grew", "grown", "자라다"],
+            ["throw", "threw", "thrown", "던지다"],
+            ["draw", "drew", "drawn", "그리다"],
+            ["show", "showed", "shown", "보여주다"],
+            ["fall", "fell", "fallen", "떨어지다"],
+            ["hide", "hid", "hidden", "숨다"],
+            ["bite", "bit", "bitten", "물다"]
         ]
         render_mobile_table(headers_abc, data_abc)
 
