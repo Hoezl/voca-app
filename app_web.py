@@ -11,7 +11,7 @@ from datetime import datetime
 # 🔑 제미나이 API 키 설정
 GEMINI_API_KEY = "AIzaSyAmZ1aHJ0d9TJoabKY7Mn5zAhZiAH3UlSo"
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-2.0-flash') 
+model = genai.GenerativeModel('gemini-1.5-flash') 
 # ==========================================
 
 # 파일 경로 설정
@@ -161,4 +161,5 @@ elif menu == "📝 실전 테스트":
 
 # ----------------- 기타 메뉴는 기존 로직을 Streamlit 방식으로 구현 가능 -----------------
 else:
+
     st.write("나머지 메뉴(학습 기록, 통계 등)도 동일한 방식으로 구현됩니다.")
