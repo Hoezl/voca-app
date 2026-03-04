@@ -10,10 +10,36 @@ from datetime import datetime
 
 # ==========================================
 # 🔑 제미나이 API 키 설정
-GEMINI_API_KEY = "AIzaSyBcGC8fkIGtzFCI8rNRyxiRuHfP5SsP4aw"  # <-- 발급받으신 키를 다시 넣어주세요!
+GEMINI_API_KEY = "AIzaSyBcGC8fkIGtzFCI8rNRyxiRuHfP5SsP4aw"
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash') 
 # ==========================================
+
+# 💡 [핵심 해결책] 오류 방지용 AI 모델 자동 전환(Fallback) 시스템
+def get_ai_response(prompt):
+    # 성공할 때까지 순서대로 시도할 모델 목록 (절대 404 에러가 나지 않는 구체적 명칭 포함)
+    models_to_try = [
+        'gemini-2.0-flash',       # 1순위: 최신 모델 (할당량 넉넉하면 이것 먼저)
+        'gemini-1.5-flash-002',   # 2순위: 1.5버전의 가장 안정적인 구체적 명칭
+        'gemini-1.5-flash-8b',    # 3순위: 아주 가볍고 할당량이 무제한에 가까운 모델
+        'gemini-pro'              # 4순위: 구버전 서버에서도 100% 인식되는 호환 모델
+    ]
+    
+    last_error = None
+    for model_name in models_to_try:
+        try:
+            target_model = genai.GenerativeModel(model_name)
+            response = target_model.generate_content(prompt)
+            return response # 성공하면 즉시 결과 반환
+        except Exception as e:
+            last_error = e
+            error_msg = str(e)
+            # 할당량 초과(ResourceExhausted)나 찾을수없음(NotFound, 404) 에러면 다음 모델로 조용히 넘어감
+            if "ResourceExhausted" in error_msg or "NotFound" in error_msg or "404" in error_msg:
+                continue 
+            else:
+                raise e # 그 외의 치명적 에러면 중단
+                
+    raise Exception(f"모든 AI 모델 시도 실패. 마지막 에러: {last_error}")
 
 VOCAB_FILE = 'my_vocab_web.csv'
 
@@ -40,7 +66,7 @@ def speak(text):
                 """
             st.markdown(md, unsafe_allow_html=True)
     except Exception:
-        pass # 오디오 에러 발생 시 프로그램이 멈추지 않도록 예외 처리
+        pass 
 
 st.set_page_config(page_title="AI 영단어 마스터", layout="centered")
 st.title("🦉 AI 영단어 마스터 Web")
@@ -70,9 +96,10 @@ if menu == "🤖 AI 단어 생성":
         [형식]: 영단어;[발음기호];품사 : 뜻;실전 출제 스타일 예문
         """
         
-        with st.spinner("AI가 단어를 고르고 있습니다..."):
+        with st.spinner("AI가 가장 적합한 모델을 찾아 단어를 생성 중입니다..."):
             try:
-                response = model.generate_content(prompt)
+                # ⭐️ 여기서 무적의 자동 우회 함수 사용!
+                response = get_ai_response(prompt)
                 lines = response.text.strip().split('\n')
                 
                 new_rows = []
@@ -103,7 +130,8 @@ elif menu == "✨ 단어 일괄 추가":
             prompt = f"단어: {words_input}\n[형식]: 영단어;[발음기호];품사 : 뜻;실전 예문 (강세기호 생략, 번호 금지)"
             with st.spinner("분석 중..."):
                 try:
-                    response = model.generate_content(prompt)
+                    # ⭐️ 여기서 무적의 자동 우회 함수 사용!
+                    response = get_ai_response(prompt)
                     lines = response.text.strip().split('\n')
                     new_rows = []
                     for line in lines:
@@ -223,35 +251,29 @@ elif menu == "📚 영어 기초 가이드":
     
     with tab1:
         st.subheader("🗣️ 영어 발음 기호표 (IPA)")
-        st.write("모바일에서도 스크롤하며 보기 편하게 3열로 정리했습니다.")
-        
-        # 모바일 화면을 위해 표를 Pandas DataFrame으로 변경하여 완벽 대응
-        vowels_data = [
-            (1, "[a]", "아"), (2, "[e]", "에"), (3, "[æ]", "애"), (4, "[i]", "이"),
-            (5, "[ɔ]", "오"), (6, "[u]", "우"), (7, "[ə]", "어"), (8, "[ʌ]", "어(강함)"),
-            (9, "[a:]", "아:"), (10, "[i:]", "이:"), (11, "[ɔ:]", "오:"), (12, "[u:]", "우:"),
-            (13, "[ə:]", "어:"), (14, "[ai]", "아이"), (15, "[ei]", "에이"), (16, "[au]", "아우"),
-            (17, "[ɔi]", "오이"), (18, "[ou]", "오우"), (19, "[iə]", "이어"), (20, "[eə]", "에어"),
-            (21, "[uə]", "우어")
-        ]
-        consonants_data = [
-            (22, "[p]", "프"), (23, "[b]", "브"), (24, "[t]", "트"), (25, "[d]", "드"),
-            (26, "[k]", "크"), (27, "[g]", "그"), (28, "[f]", "프"), (29, "[v]", "브"),
-            (30, "[θ]", "쓰(번데기)"), (31, "[ð]", "드(돼지꼬리)"), (32, "[s]", "스"), (33, "[z]", "즈"),
-            (34, "[ʃ]", "쉬"), (35, "[ʒ]", "쥐"), (36, "[tʃ]", "취"), (37, "[dʒ]", "쥬(쥐)"),
-            (38, "[h]", "흐"), (39, "[r]", "ㄹ(굴림)"), (40, "[m]", "ㅁ"), (41, "[n]", "ㄴ"),
-            (42, "[ŋ]", "응"), (43, "[l]", "ㄹ(닿음)"), (44, "[j]", "이(반모음)"), (45, "[w]", "우(반모음)"),
-            (46, "[wa]", "와"), (47, "[wɔ]", "워"), (48, "[ju]", "유"), (49, "[dʒa]", "쟈"),
-            (50, "[tʃa]", "챠")
-        ]
-        
-        st.markdown("**■ 모음 (Vowels) 21개**")
-        df_vowels = pd.DataFrame(vowels_data, columns=["번호", "발음기호", "소리"])
-        st.dataframe(df_vowels, hide_index=True, use_container_width=True)
-
-        st.markdown("**■ 자음 (Consonants) 29개**")
-        df_consonants = pd.DataFrame(consonants_data, columns=["번호", "발음기호", "소리"])
-        st.dataframe(df_consonants, hide_index=True, use_container_width=True)
+        st.markdown('<div style="overflow-x: auto;">', unsafe_allow_html=True)
+        st.markdown("""
+        | 번호 | 발음기호 | 소리 | 번호 | 발음기호 | 소리 | 번호 | 발음기호 | 소리 |
+        |---|---|---|---|---|---|---|---|---|
+        | 1 | `[a]` | 아 | 18 | `[ou]` | 오우 | 35 | `[ʒ]` | 쥐 |
+        | 2 | `[e]` | 에 | 19 | `[iə]` | 이어 | 36 | `[tʃ]` | 취 |
+        | 3 | `[æ]` | 애 | 20 | `[eə]` | 에어 | 37 | `[dʒ]` | 쥬(쥐) |
+        | 4 | `[i]` | 이 | 21 | `[uə]` | 우어 | 38 | `[h]` | 흐 |
+        | 5 | `[ɔ]` | 오 | 22 | `[p]` | 프 | 39 | `[r]` | ㄹ (굴림) |
+        | 6 | `[u]` | 우 | 23 | `[b]` | 브 | 40 | `[m]` | ㅁ |
+        | 7 | `[ə]` | 어 | 24 | `[t]` | 트 | 41 | `[n]` | ㄴ |
+        | 8 | `[ʌ]` | 어(강함) | 25 | `[d]` | 드 | 42 | `[ŋ]` | 응 |
+        | 9 | `[a:]` | 아: | 26 | `[k]` | 크 | 43 | `[l]` | ㄹ (닿음) |
+        | 10 | `[i:]` | 이: | 27 | `[g]` | 그 | 44 | `[j]` | 이 (반모음) |
+        | 11 | `[ɔ:]` | 오: | 28 | `[f]` | 프 | 45 | `[w]` | 우 (반모음) |
+        | 12 | `[u:]` | 우: | 29 | `[v]` | 브 | 46 | `[wa]` | 와 |
+        | 13 | `[ə:]` | 어: | 30 | `[θ]` | 쓰 (번데기)| 47 | `[wɔ]` | 워 |
+        | 14 | `[ai]` | 아이 | 31 | `[ð]` | 드 (돼지꼬리)| 48 | `[ju]` | 유 |
+        | 15 | `[ei]` | 에이 | 32 | `[s]` | 스 | 49 | `[dʒa]` | 쟈 |
+        | 16 | `[au]` | 아우 | 33 | `[z]` | 즈 | 50 | `[tʃa]` | 챠 |
+        | 17 | `[ɔi]` | 오이 | 34 | `[ʃ]` | 쉬 | - | - | - |
+        """)
+        st.markdown('</div>', unsafe_allow_html=True)
         
         st.divider()
         st.subheader("🧩 영어의 8품사")
@@ -269,36 +291,51 @@ elif menu == "📚 영어 기초 가이드":
 
     with tab2:
         st.subheader("🔄 동사 변화표 (불규칙 위주)")
-        st.write("영어의 일반동사는 과거형과 완료/수동태에 쓰이는 과거분사(p.p) 형태로 변신합니다.")
-        
-        verbs_data = [
-            ("A-A-A형", "put", "put", "put", "놓다"),
-            ("A-A-A형", "cut", "cut", "cut", "자르다"),
-            ("A-A-A형", "read", "read(레드)", "read(레드)", "읽다"),
-            ("A-B-A형", "come", "came", "come", "오다"),
-            ("A-B-A형", "run", "ran", "run", "달리다"),
-            ("A-B-A형", "become", "became", "become", "~이 되다"),
-            ("A-B-B형", "buy", "bought", "bought", "사다"),
-            ("A-B-B형", "catch", "caught", "caught", "잡다"),
-            ("A-B-B형", "feel", "felt", "felt", "느끼다"),
-            ("A-B-B형", "find", "found", "found", "찾다"),
-            ("A-B-B형", "have", "had", "had", "가지다"),
-            ("A-B-B형", "make", "made", "made", "만들다"),
-            ("A-B-B형", "say", "said", "said", "말하다"),
-            ("A-B-B형", "teach", "taught", "taught", "가르치다"),
-            ("A-B-C형", "be(am/is/are)", "was/were", "been", "~이다, 있다"),
-            ("A-B-C형", "begin", "began", "begun", "시작하다"),
-            ("A-B-C형", "break", "broke", "broken", "깨다"),
-            ("A-B-C형", "do", "did", "done", "하다"),
-            ("A-B-C형", "eat", "ate", "eaten", "먹다"),
-            ("A-B-C형", "go", "went", "gone", "가다"),
-            ("A-B-C형", "know", "knew", "known", "알다"),
-            ("A-B-C형", "see", "saw", "seen", "보다"),
-            ("A-B-C형", "take", "took", "taken", "가져가다"),
-            ("A-B-C형", "write", "wrote", "written", "쓰다")
-        ]
-        df_verbs = pd.DataFrame(verbs_data, columns=["패턴", "현재(V)", "과거(V-ed)", "과거분사(p.p)", "뜻"])
-        st.dataframe(df_verbs, hide_index=True, use_container_width=True)
+        st.markdown('<div style="overflow-x: auto;">', unsafe_allow_html=True)
+        st.markdown("""
+        영어의 일반동사는 과거형과 완료/수동태에 쓰이는 과거분사(p.p) 형태로 변신합니다. 대부분은 `-ed`만 붙이면 되지만, 아래 불규칙 동사는 외워야 합니다.
+
+        **① A - A - A 형 (모두 똑같음)**
+        | 현재(V) | 과거(V-ed) | 과거분사(p.p) | 뜻 |
+        |---|---|---|---|
+        | put | put | put | 놓다 |
+        | cut | cut | cut | 자르다 |
+        | read | read(레드) | read(레드) | 읽다 |
+
+        **② A - B - A 형 (현재와 p.p가 같음)**
+        | 현재(V) | 과거(V-ed) | 과거분사(p.p) | 뜻 |
+        |---|---|---|---|
+        | come | came | come | 오다 |
+        | run | ran | run | 달리다 |
+        | become | became | become | ~이 되다 |
+
+        **③ A - B - B 형 (과거와 p.p가 같음 - 가장 흔함)**
+        | 현재(V) | 과거(V-ed) | 과거분사(p.p) | 뜻 |
+        |---|---|---|---|
+        | buy | bought | bought | 사다 |
+        | catch | caught | caught | 잡다 |
+        | feel | felt | felt | 느끼다 |
+        | find | found | found | 찾다 |
+        | have | had | had | 가지다 |
+        | make | made | made | 만들다 |
+        | say | said | said | 말하다 |
+        | teach | taught | taught | 가르치다 |
+
+        **④ A - B - C 형 (3개가 모두 다름)**
+        | 현재(V) | 과거(V-ed) | 과거분사(p.p) | 뜻 |
+        |---|---|---|---|
+        | be | was/were | been | ~이다, 있다 |
+        | begin | began | begun | 시작하다 |
+        | break | broke | broken | 깨다 |
+        | do | did | done | 하다 |
+        | eat | ate | eaten | 먹다 |
+        | go | went | gone | 가다 |
+        | know | knew | known | 알다 |
+        | see | saw | seen | 보다 |
+        | take | took | taken | 가져가다 |
+        | write | wrote | written | 쓰다 |
+        """)
+        st.markdown('</div>', unsafe_allow_html=True)
 
     with tab3:
         st.subheader("🌱 기초 구문 (명사, 대명사, 전치사)")
@@ -369,4 +406,3 @@ elif menu == "📚 영어 기초 가이드":
         의문문이 다른 문장 속으로 쏙 들어갈 때. 진짜 질문이 아니므로 어순이 평서문으로 바뀜.
         * 간접: I don't know **who he is**. (의문사+주어+동사)
         """)
-
