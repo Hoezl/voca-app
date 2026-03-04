@@ -40,7 +40,7 @@ def load_data(file_path):
 def save_data(df, file_path):
     df.to_csv(file_path, index=False, encoding='utf-8-sig')
 
-# ⭐️ 1. 원할 때마다 무한 반복 재생 가능한 듣기 함수 (스트림릿 버그 완벽 우회)
+# ⭐️ 1. 무한 재생 가능한 투명 듣기 버튼 로직 (사운드바 완전 제거)
 def speak(text):
     pure_text = text.split('[')[0].strip()
     try:
@@ -48,14 +48,19 @@ def speak(text):
         tts.save("temp.mp3")
         with open("temp.mp3", "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
-            # 시간값을 넣어 매번 새로운 오디오로 인식하게 강제함
-            unique_id = str(time.time()).replace('.', '') 
-            audio_tag = f'<audio autoplay><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
-            components.html(audio_tag, height=0, width=0)
+            # 매번 새로운 오디오로 강제 인식시켜 무한 재생 버그 해결!
+            unique_id = random.randint(1, 10000000)
+            html_code = f"""
+                <audio autoplay>
+                    <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+                </audio>
+                <div style="display:none;">{unique_id}</div>
+            """
+            components.html(html_code, height=0, width=0)
     except Exception:
         pass 
 
-# ⭐️ 2. 정밀 간격 연동 연속 듣기 (1초 대기, 다음단어 2.3초)
+# ⭐️ 2. 1초 / 2.3초 간격 정밀 연속 듣기 로직
 def play_sequence_audio(words):
     audio_data_list = []
     for w in words:
@@ -86,16 +91,17 @@ def play_sequence_audio(words):
             player.onended = function() {{
                 playCount++;
                 if(playCount < 3) {{
-                    setTimeout(playNext, 1000); 
+                    setTimeout(playNext, 1000); // 1초 대기 (같은 단어)
                 }} else {{
                     playCount = 0;
                     currentWordIdx++;
-                    setTimeout(playNext, 2300); 
+                    setTimeout(playNext, 2300); // 2.3초 대기 (다음 단어)
                 }}
             }};
         }}
         playNext();
     </script>
+    <div style="display:none;">{time.time()}</div>
     """
     components.html(html_code, height=0, width=0)
 
@@ -133,6 +139,7 @@ if menu == "🤖 AI 단어 생성":
 
     if st.button("🚀 단어 생성 시작"):
         existing_words = ", ".join(df['Word'].tolist())
+        # ⭐️ 품사가 여러 개일 경우 모두 포함하도록 프롬프트 수정
         prompt = f"""
         당신은 1타 영어 강사입니다.
         분야: {category} / 난이도: {level} / {count}개 생성.
@@ -141,7 +148,7 @@ if menu == "🤖 AI 단어 생성":
         1. 번호나 리스트 표시 절대 금지.
         2. 영단어에 절대 ** 기호 금지.
         3. 발음 기호 폰트 깨짐 방지: 강세(ˈ, ˌ) 완전 생략, 장음(ː)은 일반 콜론(:) 사용.
-        4. 품사와 뜻 통합: '품사 : 뜻' 형태.
+        4. 품사와 뜻 통합: 단어가 여러 품사와 뜻을 가질 경우 쉼표(,)나 슬래시(/)로 모두 작성 (예: 명사: 물, 동사: 물을 주다)
         [형식]: 영단어;[발음기호];품사 : 뜻;실전 예문
         """
         with st.spinner("AI가 단어를 생성 중입니다..."):
@@ -234,22 +241,23 @@ elif menu in ["📖 단어 관리", "📅 학습 기록"]:
                 st.write(f"📅 추가일: {row['Date']}")
                 st.markdown(f"📝 **예문:** {row['Example'].replace(row['Word'], f'**:green[{row['Word']}]**')}")
                 
+                # ⭐️ 단어 개별 제어 버튼 (고정 키를 사용하여 완벽 동작 보장)
                 c1, c2, c3 = st.columns(3)
-                if c1.button("🔊 듣기", key=f"btn_{idx}_{time.time()}"): # 고유 ID로 매번 재생되게 함
+                if c1.button("🔊 듣기", key=f"btn_listen_{idx}"):
                     speak(row['Word']) 
                     
                 if menu == "📖 단어 관리":
-                    if c2.button("✅ 학습 완료", key=f"done_{idx}"):
+                    if c2.button("✅ 학습 완료", key=f"btn_done_{idx}"):
                         df.loc[idx, 'Status'] = 'Completed'
                         save_data(df, VOCAB_FILE)
                         st.rerun()
                 else:
-                    if c2.button("⏪ 다시 학습", key=f"relearn_{idx}"):
+                    if c2.button("⏪ 다시 학습", key=f"btn_relearn_{idx}"):
                         df.loc[idx, 'Status'] = 'Learning'
                         save_data(df, VOCAB_FILE)
                         st.rerun()
                         
-                if c3.button("🗑️ 삭제", key=f"del_{idx}"):
+                if c3.button("🗑️ 삭제", key=f"btn_del_{idx}"):
                     df = df.drop(idx)
                     save_data(df, VOCAB_FILE)
                     st.rerun()
@@ -266,7 +274,7 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
         else:
             st.warning("학습 중인 단어가 없습니다.")
     else:
-        # ⭐️ 3. 중복 출제 방지를 위한 문제 은행 시스템 (Queue)
+        # 중복 방지를 위해 전체 문제를 리스트(Queue)에 담아두고 하나씩 빼는 방식
         if 'test_menu' not in st.session_state or st.session_state.test_menu != menu:
             st.session_state.test_menu = menu
             st.session_state.prev_result = None
@@ -276,7 +284,7 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
             random.shuffle(queue)
             st.session_state.test_queue = queue
 
-        # 방금 푼 문제 피드백
+        # 방금 푼 문제 결과 피드백 (딱 한 번만 발음 재생)
         if st.session_state.prev_result:
             res = st.session_state.prev_result
             if res['correct']:
@@ -291,9 +299,9 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
 
         st.divider()
 
-        # 남아있는 문제가 없을 때
+        # ⭐️ 문제가 다 끝났을 때
         if not st.session_state.test_queue:
-            st.success("🎉 모든 단어의 테스트가 끝났습니다! 정말 고생하셨습니다.")
+            st.success("🎉 준비된 모든 단어의 테스트가 끝났습니다! 정말 고생하셨습니다.")
             if st.button("🔄 처음부터 다시 풀기"):
                 queue = current_pool['Word'].tolist()
                 random.shuffle(queue)
@@ -301,7 +309,7 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                 st.session_state.prev_result = None
                 st.rerun()
         else:
-            # 다음 문제 출제
+            # ⭐️ 다음 문제 출제
             current_word_str = st.session_state.test_queue[0]
             word_info = current_pool[current_pool['Word'] == current_word_str].iloc[0]
             test_mode = random.choice(['E2K', 'K2E'])
@@ -314,49 +322,62 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                 st.subheader(f"Q: {word_info['Meaning']}")
                 st.caption("해당하는 영어 단어는?")
 
-            # 폼(form) 없이 다이렉트 텍스트 인풋으로 엔터 작동 보장
-            input_key = f"ans_{word_info['Word']}_{len(st.session_state.test_queue)}"
-            ans = st.text_input("✍️ 정답을 입력하고 엔터(Enter)를 누르세요.", key=input_key)
+            # ⭐️ 엔터키 고장을 막기 위해 st.form 도입! (엔터 치면 무조건 제출)
+            with st.form(key=f"test_form_{current_word_str}", clear_on_submit=True):
+                ans = st.text_input("✍️ 정답을 입력하고 엔터(Enter)를 누르세요.")
+                submitted = st.form_submit_button("제출")
+                
+                # 타자 칠 때 클릭하지 않아도 포커스가 자동 이동하도록 설정
+                components.html(
+                    """
+                    <script>
+                        const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+                        if (inputs.length > 0) { inputs[inputs.length - 1].focus(); }
+                    </script>
+                    """, height=0, width=0
+                )
 
-            # ⭐️ 4. 마우스 클릭 없이 타자를 바로 칠 수 있게 만드는 오토 포커스 JS
-            components.html(
-                f"""
-                <script>
-                    const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-                    if (inputs.length > 0) {{
-                        inputs[inputs.length - 1].focus();
-                    }}
-                </script>
-                """, height=0, width=0
-            )
+                if submitted and ans:
+                    correct = False
+                    
+                    # ⭐️ 3. 천사 같은 채점 로직 (공백, 쉼표, 기호, 품사태그 무시)
+                    if test_mode == 'E2K':
+                        # 한국어 뜻 맞추기 (사용자가 '물주다'라고 치든, '물'이라고 치든 뜻 안에 있으면 정답)
+                        clean_ans = ans.replace(" ", "").replace(",", "").replace("/", "").replace("(", "").replace(")", "")
+                        clean_meaning = word_info['Meaning'].replace(" ", "")
+                        pos_tags = ["명사:", "동사:", "대명사:", "형용사:", "부사:", "전치사:", "접속사:", "감탄사:", "명사", "동사", "대명사", "형용사", "부사", "전치사", "접속사", "감탄사"]
+                        for tag in pos_tags:
+                            clean_meaning = clean_meaning.replace(tag, "")
+                        
+                        if clean_ans in clean_meaning:
+                            correct = True
+                    else:
+                        # 영어 단어 맞추기 (대소문자 무시, 알파벳 외 기호 완전 무시)
+                        clean_ans = re.sub(r'[^a-zA-Z]', '', ans).lower()
+                        clean_word = re.sub(r'[^a-zA-Z]', '', word_info['Word']).lower()
+                        if clean_ans == clean_word:
+                            correct = True
 
-            if ans:
-                correct = False
-                if test_mode == 'E2K':
-                    user_stems = set(re.split(r'[,\s]+', ans))
-                    correct_stems = set(re.split(r'[,\s]+', word_info['Meaning']))
-                    if user_stems & correct_stems: correct = True
-                else:
-                    if ans.lower() == word_info['Word'].lower(): correct = True
+                    # 오답노트 저장 및 삭제 로직
+                    if correct:
+                        if is_wrong_mode and word_info['Word'] in wrong_df['Word'].values:
+                            wrong_df = wrong_df[wrong_df['Word'] != word_info['Word']]
+                            save_data(wrong_df, WRONG_FILE)
+                    else:
+                        if word_info['Word'] not in wrong_df['Word'].values:
+                            new_wrong = pd.DataFrame([word_info])
+                            wrong_df = pd.concat([wrong_df, new_wrong], ignore_index=True)
+                            save_data(wrong_df, WRONG_FILE)
 
-                if correct:
-                    if is_wrong_mode and word_info['Word'] in wrong_df['Word'].values:
-                        wrong_df = wrong_df[wrong_df['Word'] != word_info['Word']]
-                        save_data(wrong_df, WRONG_FILE)
-                else:
-                    if word_info['Word'] not in wrong_df['Word'].values:
-                        new_wrong = pd.DataFrame([word_info])
-                        wrong_df = pd.concat([wrong_df, new_wrong], ignore_index=True)
-                        save_data(wrong_df, WRONG_FILE)
-
-                st.session_state.prev_result = {
-                    'correct': correct, 'word': word_info['Word'],
-                    'meaning': word_info['Meaning'], 'example': word_info['Example'],
-                    'user_ans': ans
-                }
-                st.session_state.audio_played = False
-                st.session_state.test_queue.pop(0) # 문제 은행에서 방금 푼 문제 제거
-                st.rerun()
+                    # 결과 저장 후 대기열에서 제거
+                    st.session_state.prev_result = {
+                        'correct': correct, 'word': word_info['Word'],
+                        'meaning': word_info['Meaning'], 'example': word_info['Example'],
+                        'user_ans': ans
+                    }
+                    st.session_state.audio_played = False
+                    st.session_state.test_queue.pop(0) 
+                    st.rerun()
 
 # ----------------- 📊 학습 통계 -----------------
 elif menu == "📊 학습 통계":
@@ -413,11 +434,10 @@ elif menu == "📚 영어 기초 가이드":
         """)
 
     with tab2:
-        st.subheader("🔄 핵심 필수 동사표 (100+)")
-        st.write("모든 단어를 넣는 것은 물리적으로 불가능하지만, 원어민이 매일 쓰는 필수 단어들을 패턴별로 총망라했습니다.")
+        st.subheader("🔄 핵심 필수 동사표 (100+ 총망라)")
+        st.write("영어의 모든 동사(수만 개)를 담으면 사이트가 느려집니다. 대신, 원어민이 평생 쓰는 **핵심 필수 동사 100여 개**를 패턴별로 빈틈없이 모아두었습니다!")
         
         st.markdown("### 1. 규칙 동사 모음 (Regular Verbs)")
-        st.write("대부분의 동사는 형태에 따라 일정한 규칙을 가지고 `-ed`가 붙습니다.")
         headers_reg = ["규칙 패턴", "현재(V)", "과거(V-ed)", "과거분사(p.p)", "뜻"]
         data_reg = [
             ["일반 (+ed)", "want", "wanted", "wanted", "원하다"],
@@ -426,13 +446,18 @@ elif menu == "📚 영어 기초 가이드":
             ["일반 (+ed)", "look", "looked", "looked", "보다"],
             ["일반 (+ed)", "call", "called", "called", "부르다"],
             ["일반 (+ed)", "ask", "asked", "asked", "묻다"],
+            ["일반 (+ed)", "work", "worked", "worked", "일하다"],
+            ["일반 (+ed)", "need", "needed", "needed", "필요하다"],
+            ["일반 (+ed)", "seem", "seemed", "seemed", "보이다"],
             ["-e로 끝 (+d)", "use", "used", "used", "사용하다"],
             ["-e로 끝 (+d)", "agree", "agreed", "agreed", "동의하다"],
             ["-e로 끝 (+d)", "smile", "smiled", "smiled", "웃다"],
             ["-e로 끝 (+d)", "decide", "decided", "decided", "결정하다"],
+            ["-e로 끝 (+d)", "hope", "hoped", "hoped", "희망하다"],
             ["자음+y 끝 (y->ied)", "try", "tried", "tried", "시도하다"],
             ["자음+y 끝 (y->ied)", "study", "studied", "studied", "공부하다"],
             ["자음+y 끝 (y->ied)", "cry", "cried", "cried", "울다"],
+            ["자음+y 끝 (y->ied)", "worry", "worried", "worried", "걱정하다"],
             ["단모음+자음 (자음추가)", "stop", "stopped", "stopped", "멈추다"],
             ["단모음+자음 (자음추가)", "plan", "planned", "planned", "계획하다"],
             ["단모음+자음 (자음추가)", "drop", "dropped", "dropped", "떨어뜨리다"]
@@ -442,7 +467,7 @@ elif menu == "📚 영어 기초 가이드":
         st.divider()
 
         st.markdown("### 2. 불규칙 동사 모음 (Irregular Verbs)")
-        st.write("규칙 없이 변하므로 가장 헷갈리는 필수 단어들을 패턴별로 모았습니다.")
+        st.write("규칙 없이 변하므로 가장 헷갈리는 필수 단어들을 4가지 패턴으로 분리했습니다.")
         
         st.markdown("#### ① A-A-A 형 (형태가 모두 같음)")
         headers_aaa = ["현재(V)", "과거(V-ed)", "과거분사(p.p)", "뜻"]
@@ -452,7 +477,7 @@ elif menu == "📚 영어 기초 가이드":
             ["read", "read(레드)", "read(레드)", "읽다"],
             ["hit", "hit", "hit", "치다"],
             ["set", "set", "set", "세팅하다"],
-            ["let", "let", "let", "내버려두다"],
+            ["let", "let", "let", "허락하다"],
             ["cost", "cost", "cost", "비용이 들다"],
             ["shut", "shut", "shut", "닫다"],
             ["hurt", "hurt", "hurt", "다치다"],
@@ -540,7 +565,7 @@ elif menu == "📚 영어 기초 가이드":
         * **불가산명사 (셀 수 없음)**: 액체나 덩어리, 안보이는 개념. `a`나 `-s`를 붙일 수 없습니다. (예: `water`, `information`, `money`)
 
         **■ 2. 만능 단어 'it'의 3가지 쓰임**
-        * **지시대명사**: 앞서 말한 그것. "Where is my book? **It** is on the desk."
+        * **지시대명사**: 앞서 말한 그것. "Where is 대 book? **It** is on the desk."
         * **비인칭주어**: 시간/날씨/거리에서 자리만 채움 (해석 안함). "**It** is raining."
         * **가주어**: 진짜 주어가 길어서 뒤로 빼고 빈자리를 채움. "**It** is hard to master English."
 
