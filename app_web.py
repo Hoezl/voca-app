@@ -14,69 +14,77 @@ GEMINI_API_KEY = "AIzaSyDkkGaVQAz66GB94QCd9vuYQZEddfCJvl0"
 genai.configure(api_key=GEMINI_API_KEY)
 # ==========================================
 
-# 💡 [최종 해결책] 구글 서버에 직접 접속 가능한 모델을 물어보고 자동 선택하는 시스템!
+# 💡 구글 서버 자동 탐지 시스템
 def get_ai_response(prompt):
-    try:
-        # 1. 내 API 키로 쓸 수 있는 모든 모델 목록을 구글에서 가져옵니다.
-        available_models = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                available_models.append(m.name)
-        
-        if not available_models:
-            raise Exception("이 API 키로 텍스트를 생성할 수 있는 권한이 없습니다.")
-
-        # 2. 가져온 목록 중 가장 가볍고 무료 할당량이 많은 '1.5-flash' 계열을 1순위로 찾습니다.
-        target_model_name = None
-        for name in available_models:
-            if '1.5-flash' in name:
-                target_model_name = name
-                break
-        
-        # 만약 flash 모델이 없다면, 구글이 허락한 첫 번째 모델을 무조건 씁니다.
-        if not target_model_name:
-            target_model_name = available_models[0]
-
-        # 3. 알아낸 정확한 이름으로 단어 생성을 지시합니다.
-        target_model = genai.GenerativeModel(target_model_name)
-        return target_model.generate_content(prompt)
-
-    except Exception as e:
-        raise Exception(f"AI 자동 탐지 및 생성 실패: {str(e)}")
+    models_to_try = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-flash-8b', 'gemini-pro']
+    last_error = None
+    for model_name in models_to_try:
+        try:
+            target_model = genai.GenerativeModel(model_name)
+            return target_model.generate_content(prompt)
+        except Exception as e:
+            last_error = e
+            continue 
+    raise Exception(f"모든 AI 모델 접근 실패. (마지막 에러: {last_error})")
 
 VOCAB_FILE = 'my_vocab_web.csv'
+WRONG_FILE = 'my_vocab_wrong_web.csv' # ⭐️ 오답노트 파일 추가
 
-def load_data():
-    if os.path.exists(VOCAB_FILE):
-        return pd.read_csv(VOCAB_FILE)
+def load_data(file_path):
+    if os.path.exists(file_path):
+        return pd.read_csv(file_path)
     return pd.DataFrame(columns=['Word', 'Phonetic', 'Meaning', 'Example', 'Date', 'Status', 'Category', 'Level'])
 
-def save_data(df):
-    df.to_csv(VOCAB_FILE, index=False, encoding='utf-8-sig')
+def save_data(df, file_path):
+    df.to_csv(file_path, index=False, encoding='utf-8-sig')
 
-def speak(text):
-    pure_text = text.split('[')[0].strip()
+def speak(text, autoplay=True):
     try:
-        tts = gTTS(text=pure_text, lang='en')
+        tts = gTTS(text=text, lang='en')
         tts.save("temp.mp3")
         with open("temp.mp3", "rb") as f:
             data = f.read()
             b64 = base64.b64encode(data).decode()
-            md = f"""
-                <audio autoplay="true">
-                <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
-                </audio>
-                """
-            st.markdown(md, unsafe_allow_html=True)
+            audio_tag = f'<audio {"autoplay" if autoplay else ""} controls style="height: 30px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
+            st.markdown(audio_tag, unsafe_allow_html=True)
     except Exception:
         pass 
+
+# ⭐️ 1단어당 3번 반복 후 다음 단어로 넘어가는 연속 재생 함수
+def play_sequence_audio(words):
+    seq_text = ""
+    for w in words:
+        pure_w = w.split('[')[0].strip()
+        # 마침표(.)를 사용해 1초 대기 효과, 여러 개를 써서 2.3초 대기 효과 생성
+        seq_text += f"{pure_w}. . {pure_w}. . {pure_w}. . . . . " 
+    speak(seq_text)
+
+# ⭐️ 모바일 최적화 표 렌더링 함수
+def render_mobile_table(headers, data):
+    html = '<div style="overflow-x: auto;"><table style="width: 100%; border-collapse: collapse; font-size: 14px;">'
+    html += "<tr>" + "".join([f"<th style='border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #333; color: white;'>{h}</th>" for h in headers]) + "</tr>"
+    for row in data:
+        html += "<tr>" + "".join([f"<td style='border: 1px solid #ddd; padding: 8px;'>{cell}</td>" for cell in row]) + "</tr>"
+    html += "</table></div>"
+    st.markdown(html, unsafe_allow_html=True)
 
 st.set_page_config(page_title="AI 영단어 마스터", layout="centered")
 st.title("🦉 AI 영단어 마스터 Web")
 
-menu = st.sidebar.selectbox("메뉴 선택", ["🤖 AI 단어 생성", "✨ 단어 일괄 추가", "📖 단어 관리", "📅 학습 기록", "📝 실전 테스트", "📊 학습 통계", "📚 영어 기초 가이드"])
+# ⭐️ 요청하신 메뉴 순서 적용
+menu = st.sidebar.selectbox("메뉴 선택", [
+    "🤖 AI 단어 생성", 
+    "✨ 단어 일괄 추가", 
+    "📖 단어 관리", 
+    "📝 실전 테스트", 
+    "🔥 오답 노트 재도전", 
+    "📚 영어 기초 가이드", 
+    "📅 학습 기록", 
+    "📊 학습 통계"
+])
 
-df = load_data()
+df = load_data(VOCAB_FILE)
+wrong_df = load_data(WRONG_FILE)
 
 # ----------------- 🤖 AI 단어 생성 -----------------
 if menu == "🤖 AI 단어 생성":
@@ -99,9 +107,8 @@ if menu == "🤖 AI 단어 생성":
         [형식]: 영단어;[발음기호];품사 : 뜻;실전 출제 스타일 예문
         """
         
-        with st.spinner("AI가 최적의 서버를 스캔하여 단어를 생성 중입니다..."):
+        with st.spinner("AI가 최적의 서버를 찾아 단어를 생성 중입니다..."):
             try:
-                # 무적 탐지 함수 호출
                 response = get_ai_response(prompt)
                 lines = response.text.strip().split('\n')
                 
@@ -119,10 +126,10 @@ if menu == "🤖 AI 단어 생성":
                 if new_rows:
                     new_df = pd.DataFrame(new_rows)
                     df = pd.concat([df, new_df], ignore_index=True).drop_duplicates('Word')
-                    save_data(df)
+                    save_data(df, VOCAB_FILE)
                     st.success(f"🎉 {len(new_rows)}개의 단어가 성공적으로 추가되었습니다!")
             except Exception as e:
-                st.error(f"❌ 생성 중 오류가 발생했습니다.\n{e}")
+                st.error(f"❌ 생성 중 오류가 발생했습니다.\n에러 원인: {e}")
 
 # ----------------- ✨ 수동 일괄 추가 -----------------
 elif menu == "✨ 단어 일괄 추가":
@@ -133,7 +140,6 @@ elif menu == "✨ 단어 일괄 추가":
             prompt = f"단어: {words_input}\n[형식]: 영단어;[발음기호];품사 : 뜻;실전 예문 (강세기호 생략, 번호 금지)"
             with st.spinner("분석 중..."):
                 try:
-                    # 무적 탐지 함수 호출
                     response = get_ai_response(prompt)
                     lines = response.text.strip().split('\n')
                     new_rows = []
@@ -149,10 +155,10 @@ elif menu == "✨ 단어 일괄 추가":
                     if new_rows:
                         new_df = pd.DataFrame(new_rows)
                         df = pd.concat([df, new_df], ignore_index=True).drop_duplicates('Word')
-                        save_data(df)
+                        save_data(df, VOCAB_FILE)
                         st.success("추가 완료!")
                 except Exception as e:
-                    st.error(f"❌ 분석 중 오류가 발생했습니다.\n{e}")
+                    st.error(f"❌ 분석 중 오류가 발생했습니다.\n에러 원인: {e}")
 
 # ----------------- 📖 단어 관리 / 학습 기록 -----------------
 elif menu in ["📖 단어 관리", "📅 학습 기록"]:
@@ -163,69 +169,116 @@ elif menu in ["📖 단어 관리", "📅 학습 기록"]:
     if view_df.empty:
         st.info("해당하는 단어가 없습니다.")
     else:
+        # 상단 다중 선택 컨트롤
         selected_indices = st.multiselect("체크박스 (단어 선택)", view_df.index, format_func=lambda x: f"{view_df.loc[x, 'Word']} - {view_df.loc[x, 'Meaning']}")
         
         col1, col2, col3 = st.columns(3)
+        if col2.button("🔊 연속 듣기") and selected_indices:
+            words_to_play = [df.loc[i, 'Word'] for i in selected_indices]
+            play_sequence_audio(words_to_play)
+            
         if menu == "📖 단어 관리":
-            if col1.button("✅ 학습 완료"):
+            if col1.button("✅ 선택 완료"):
                 df.loc[selected_indices, 'Status'] = 'Completed'
-                save_data(df)
+                save_data(df, VOCAB_FILE)
                 st.rerun()
         else:
             if col1.button("⏪ 다시 학습"):
                 df.loc[selected_indices, 'Status'] = 'Learning'
-                save_data(df)
+                save_data(df, VOCAB_FILE)
                 st.rerun()
-                
-        if col2.button("🔊 선택 발음 듣기") and selected_indices:
-            speak(df.loc[selected_indices[0], 'Word']) 
 
-        if col3.button("🗑️ 삭제"):
+        if col3.button("🗑️ 선택 삭제"):
             df = df.drop(selected_indices)
-            save_data(df)
+            save_data(df, VOCAB_FILE)
             st.rerun()
 
         st.divider()
+        
+        # ⭐️ 개별 단어 컨트롤러 (언제든 듣기, 개별 완료/삭제 기능)
         for idx, row in view_df.iterrows():
             with st.expander(f"**{row['Word']}** {row['Phonetic']} | {row['Meaning']}"):
                 st.write(f"📅 추가일: {row['Date']}")
                 st.markdown(f"📝 **예문:** {row['Example'].replace(row['Word'], f'**:green[{row['Word']}]**')}")
-                if st.button("🔊 듣기", key=f"btn_{row['Word']}_{idx}"):
-                    speak(row['Word'])
+                
+                # 플레이어가 화면에 남아있어 원할 때마다 누를 수 있음
+                speak(row['Word'], autoplay=False)
+                
+                # 개별 관리 버튼
+                c1, c2 = st.columns([1, 1])
+                if menu == "📖 단어 관리":
+                    if c1.button("✅ 학습 완료", key=f"done_{idx}"):
+                        df.loc[idx, 'Status'] = 'Completed'
+                        save_data(df, VOCAB_FILE)
+                        st.rerun()
+                else:
+                    if c1.button("⏪ 다시 학습", key=f"relearn_{idx}"):
+                        df.loc[idx, 'Status'] = 'Learning'
+                        save_data(df, VOCAB_FILE)
+                        st.rerun()
+                        
+                if c2.button("🗑️ 삭제", key=f"del_{idx}"):
+                    df = df.drop(idx)
+                    save_data(df, VOCAB_FILE)
+                    st.rerun()
 
-# ----------------- 📝 실전 테스트 -----------------
-elif menu == "📝 실전 테스트":
-    st.header("📝 실전 랜덤 테스트")
-    test_pool = df[df['Status'] == 'Learning']
+# ----------------- 📝 실전 테스트 & 🔥 오답 노트 재도전 -----------------
+elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
+    st.header(menu)
+    is_wrong_mode = (menu == "🔥 오답 노트 재도전")
+    test_pool = wrong_df if is_wrong_mode else df[df['Status'] == 'Learning']
     
     if test_pool.empty:
-        st.warning("테스트할 단어가 없습니다. 단어를 먼저 추가해주세요.")
+        st.warning("테스트할 단어가 없습니다.")
     else:
-        if 'test_word' not in st.session_state:
+        # ⭐️ 엔터키 연동을 위한 상태 관리 폼 구조
+        if 'test_phase' not in st.session_state:
+            st.session_state.test_phase = 'ask'
             st.session_state.test_word = test_pool.sample(1).iloc[0]
             st.session_state.test_mode = random.choice(['E2K', 'K2E'])
 
         word_info = st.session_state.test_word
         
-        if st.session_state.test_mode == 'E2K':
-            st.subheader(f"Q: {word_info['Word']} {word_info['Phonetic']}")
-            st.caption("이 단어의 뜻은?")
-        else:
-            st.subheader(f"Q: {word_info['Meaning']}")
-            st.caption("해당하는 영어 단어는?")
-
-        ans = st.text_input("정답 입력 (제출은 엔터)")
-        
-        if ans: 
-            correct = False
+        if st.session_state.test_phase == 'ask':
             if st.session_state.test_mode == 'E2K':
-                user_stems = set(re.split(r'[,\s]+', ans))
-                correct_stems = set(re.split(r'[,\s]+', word_info['Meaning']))
-                if user_stems & correct_stems: correct = True
+                st.subheader(f"Q: {word_info['Word']} {word_info['Phonetic']}")
+                st.caption("이 단어의 뜻은?")
             else:
-                if ans.lower() == word_info['Word'].lower(): correct = True
-            
-            if correct:
+                st.subheader(f"Q: {word_info['Meaning']}")
+                st.caption("해당하는 영어 단어는?")
+
+            # 엔터 제출시 clear_on_submit=True 로 입력칸 자동 초기화!
+            with st.form("test_form", clear_on_submit=True):
+                ans = st.text_input("정답 입력 (제출은 엔터)")
+                submitted = st.form_submit_button("제출")
+                
+                if submitted and ans:
+                    correct = False
+                    if st.session_state.test_mode == 'E2K':
+                        user_stems = set(re.split(r'[,\s]+', ans))
+                        correct_stems = set(re.split(r'[,\s]+', word_info['Meaning']))
+                        if user_stems & correct_stems: correct = True
+                    else:
+                        if ans.lower() == word_info['Word'].lower(): correct = True
+                    
+                    st.session_state.is_correct = correct
+                    st.session_state.test_phase = 'result'
+                    
+                    # 오답 노트 데이터 갱신
+                    if correct:
+                        if is_wrong_mode and word_info['Word'] in wrong_df['Word'].values:
+                            wrong_df = wrong_df[wrong_df['Word'] != word_info['Word']]
+                            save_data(wrong_df, WRONG_FILE)
+                    else:
+                        if not is_wrong_mode and word_info['Word'] not in wrong_df['Word'].values:
+                            new_wrong = pd.DataFrame([word_info])
+                            wrong_df = pd.concat([wrong_df, new_wrong], ignore_index=True)
+                            save_data(wrong_df, WRONG_FILE)
+                    
+                    st.rerun()
+
+        elif st.session_state.test_phase == 'result':
+            if st.session_state.is_correct:
                 st.success("✅ 완벽합니다!")
             else:
                 st.error(f"❌ 아쉽네요. 정답: **{word_info['Word']}** | {word_info['Meaning']}")
@@ -233,19 +286,29 @@ elif menu == "📝 실전 테스트":
             st.info(f"💡 예문: {word_info['Example']}")
             speak(word_info['Word'])
             
-            if st.button("다음 문제"):
-                del st.session_state.test_word
-                st.rerun()
+            # 다음 문제로 넘어가기 (역시 폼 구조로 묶어 엔터키 지원)
+            with st.form("next_form"):
+                if st.form_submit_button("다음 문제 (엔터)"):
+                    st.session_state.test_phase = 'ask'
+                    # 새 문제 뽑기
+                    updated_pool = wrong_df if is_wrong_mode else df[df['Status'] == 'Learning']
+                    if not updated_pool.empty:
+                        st.session_state.test_word = updated_pool.sample(1).iloc[0]
+                        st.session_state.test_mode = random.choice(['E2K', 'K2E'])
+                    else:
+                        del st.session_state.test_phase
+                    st.rerun()
 
 # ----------------- 📊 학습 통계 -----------------
 elif menu == "📊 학습 통계":
     st.header("📊 내 학습 통계")
     st.subheader(f"📚 전체 누적 단어: {len(df)}개")
+    st.subheader(f"🔥 오답 노트 누적: {len(wrong_df)}개")
     if not df.empty:
         stats = df.groupby(['Category', 'Level']).size().reset_index(name='Count')
         st.dataframe(stats, hide_index=True, use_container_width=True)
 
-# ----------------- 📚 영어 기초 가이드 -----------------
+# ----------------- 📚 영어 기초 가이드 (모바일 완벽 대응) -----------------
 elif menu == "📚 영어 기초 가이드":
     st.header("📚 기초 영어 완벽 가이드")
     st.caption("영포자도 이해할 수 있는 원리 위주의 핵심 가이드입니다.")
@@ -254,29 +317,29 @@ elif menu == "📚 영어 기초 가이드":
     
     with tab1:
         st.subheader("🗣️ 영어 발음 기호표 (IPA)")
-        st.markdown('<div style="overflow-x: auto;">', unsafe_allow_html=True)
-        st.markdown("""
-        | 번호 | 발음기호 | 소리 | 번호 | 발음기호 | 소리 | 번호 | 발음기호 | 소리 |
-        |---|---|---|---|---|---|---|---|---|
-        | 1 | `[a]` | 아 | 18 | `[ou]` | 오우 | 35 | `[ʒ]` | 쥐 |
-        | 2 | `[e]` | 에 | 19 | `[iə]` | 이어 | 36 | `[tʃ]` | 취 |
-        | 3 | `[æ]` | 애 | 20 | `[eə]` | 에어 | 37 | `[dʒ]` | 쥬(쥐) |
-        | 4 | `[i]` | 이 | 21 | `[uə]` | 우어 | 38 | `[h]` | 흐 |
-        | 5 | `[ɔ]` | 오 | 22 | `[p]` | 프 | 39 | `[r]` | ㄹ (굴림) |
-        | 6 | `[u]` | 우 | 23 | `[b]` | 브 | 40 | `[m]` | ㅁ |
-        | 7 | `[ə]` | 어 | 24 | `[t]` | 트 | 41 | `[n]` | ㄴ |
-        | 8 | `[ʌ]` | 어(강함) | 25 | `[d]` | 드 | 42 | `[ŋ]` | 응 |
-        | 9 | `[a:]` | 아: | 26 | `[k]` | 크 | 43 | `[l]` | ㄹ (닿음) |
-        | 10 | `[i:]` | 이: | 27 | `[g]` | 그 | 44 | `[j]` | 이 (반모음) |
-        | 11 | `[ɔ:]` | 오: | 28 | `[f]` | 프 | 45 | `[w]` | 우 (반모음) |
-        | 12 | `[u:]` | 우: | 29 | `[v]` | 브 | 46 | `[wa]` | 와 |
-        | 13 | `[ə:]` | 어: | 30 | `[θ]` | 쓰 (번데기)| 47 | `[wɔ]` | 워 |
-        | 14 | `[ai]` | 아이 | 31 | `[ð]` | 드 (돼지꼬리)| 48 | `[ju]` | 유 |
-        | 15 | `[ei]` | 에이 | 32 | `[s]` | 스 | 49 | `[dʒa]` | 쟈 |
-        | 16 | `[au]` | 아우 | 33 | `[z]` | 즈 | 50 | `[tʃa]` | 챠 |
-        | 17 | `[ɔi]` | 오이 | 34 | `[ʃ]` | 쉬 | - | - | - |
-        """)
-        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # ⭐️ 모바일 가로 스크롤 완벽 대응 HTML 표
+        headers = ["번호", "발음기호", "소리", "번호", "발음기호", "소리", "번호", "발음기호", "소리"]
+        data = [
+            ["1", "[a]", "아", "18", "[ou]", "오우", "35", "[ʒ]", "쥐"],
+            ["2", "[e]", "에", "19", "[iə]", "이어", "36", "[tʃ]", "취"],
+            ["3", "[æ]", "애", "20", "[eə]", "에어", "37", "[dʒ]", "쥬(쥐)"],
+            ["4", "[i]", "이", "21", "[uə]", "우어", "38", "[h]", "흐"],
+            ["5", "[ɔ]", "오", "22", "[p]", "프", "39", "[r]", "ㄹ (굴림)"],
+            ["6", "[u]", "우", "23", "[b]", "브", "40", "[m]", "ㅁ"],
+            ["7", "[ə]", "어", "24", "[t]", "트", "41", "[n]", "ㄴ"],
+            ["8", "[ʌ]", "어(강)", "25", "[d]", "드", "42", "[ŋ]", "응"],
+            ["9", "[a:]", "아:", "26", "[k]", "크", "43", "[l]", "ㄹ (닿음)"],
+            ["10", "[i:]", "이:", "27", "[g]", "그", "44", "[j]", "이(반모음)"],
+            ["11", "[ɔ:]", "오:", "28", "[f]", "프", "45", "[w]", "우(반모음)"],
+            ["12", "[u:]", "우:", "29", "[v]", "브", "46", "[wa]", "와"],
+            ["13", "[ə:]", "어:", "30", "[θ]", "쓰(번데기)", "47", "[wɔ]", "워"],
+            ["14", "[ai]", "아이", "31", "[ð]", "드(꼬리)", "48", "[ju]", "유"],
+            ["15", "[ei]", "에이", "32", "[s]", "스", "49", "[dʒa]", "쟈"],
+            ["16", "[au]", "아우", "33", "[z]", "즈", "50", "[tʃa]", "챠"],
+            ["17", "[ɔi]", "오이", "34", "[ʃ]", "쉬", "-", "-", "-"]
+        ]
+        render_mobile_table(headers, data)
         
         st.divider()
         st.subheader("🧩 영어의 8품사")
@@ -294,51 +357,34 @@ elif menu == "📚 영어 기초 가이드":
 
     with tab2:
         st.subheader("🔄 동사 변화표 (불규칙 위주)")
-        st.markdown('<div style="overflow-x: auto;">', unsafe_allow_html=True)
-        st.markdown("""
-        영어의 일반동사는 과거형과 완료/수동태에 쓰이는 과거분사(p.p) 형태로 변신합니다. 대부분은 `-ed`만 붙이면 되지만, 아래 불규칙 동사는 외워야 합니다.
-
-        **① A - A - A 형 (모두 똑같음)**
-        | 현재(V) | 과거(V-ed) | 과거분사(p.p) | 뜻 |
-        |---|---|---|---|
-        | put | put | put | 놓다 |
-        | cut | cut | cut | 자르다 |
-        | read | read(레드) | read(레드) | 읽다 |
-
-        **② A - B - A 형 (현재와 p.p가 같음)**
-        | 현재(V) | 과거(V-ed) | 과거분사(p.p) | 뜻 |
-        |---|---|---|---|
-        | come | came | come | 오다 |
-        | run | ran | run | 달리다 |
-        | become | became | become | ~이 되다 |
-
-        **③ A - B - B 형 (과거와 p.p가 같음 - 가장 흔함)**
-        | 현재(V) | 과거(V-ed) | 과거분사(p.p) | 뜻 |
-        |---|---|---|---|
-        | buy | bought | bought | 사다 |
-        | catch | caught | caught | 잡다 |
-        | feel | felt | felt | 느끼다 |
-        | find | found | found | 찾다 |
-        | have | had | had | 가지다 |
-        | make | made | made | 만들다 |
-        | say | said | said | 말하다 |
-        | teach | taught | taught | 가르치다 |
-
-        **④ A - B - C 형 (3개가 모두 다름)**
-        | 현재(V) | 과거(V-ed) | 과거분사(p.p) | 뜻 |
-        |---|---|---|---|
-        | be | was/were | been | ~이다, 있다 |
-        | begin | began | begun | 시작하다 |
-        | break | broke | broken | 깨다 |
-        | do | did | done | 하다 |
-        | eat | ate | eaten | 먹다 |
-        | go | went | gone | 가다 |
-        | know | knew | known | 알다 |
-        | see | saw | seen | 보다 |
-        | take | took | taken | 가져가다 |
-        | write | wrote | written | 쓰다 |
-        """)
-        st.markdown('</div>', unsafe_allow_html=True)
+        headers_v = ["패턴", "현재(V)", "과거(V-ed)", "과거분사(p.p)", "뜻"]
+        data_v = [
+            ["A-A-A", "put", "put", "put", "놓다"],
+            ["A-A-A", "cut", "cut", "cut", "자르다"],
+            ["A-A-A", "read", "read(레드)", "read(레드)", "읽다"],
+            ["A-B-A", "come", "came", "come", "오다"],
+            ["A-B-A", "run", "ran", "run", "달리다"],
+            ["A-B-A", "become", "became", "become", "~이 되다"],
+            ["A-B-B", "buy", "bought", "bought", "사다"],
+            ["A-B-B", "catch", "caught", "caught", "잡다"],
+            ["A-B-B", "feel", "felt", "felt", "느끼다"],
+            ["A-B-B", "find", "found", "found", "찾다"],
+            ["A-B-B", "have", "had", "had", "가지다"],
+            ["A-B-B", "make", "made", "made", "만들다"],
+            ["A-B-B", "say", "said", "said", "말하다"],
+            ["A-B-B", "teach", "taught", "taught", "가르치다"],
+            ["A-B-C", "be(am/is)", "was/were", "been", "이다, 있다"],
+            ["A-B-C", "begin", "began", "begun", "시작하다"],
+            ["A-B-C", "break", "broke", "broken", "깨다"],
+            ["A-B-C", "do", "did", "done", "하다"],
+            ["A-B-C", "eat", "ate", "eaten", "먹다"],
+            ["A-B-C", "go", "went", "gone", "가다"],
+            ["A-B-C", "know", "knew", "known", "알다"],
+            ["A-B-C", "see", "saw", "seen", "보다"],
+            ["A-B-C", "take", "took", "taken", "가져가다"],
+            ["A-B-C", "write", "wrote", "written", "쓰다"]
+        ]
+        render_mobile_table(headers_v, data_v)
 
     with tab3:
         st.subheader("🌱 기초 구문 (명사, 대명사, 전치사)")
