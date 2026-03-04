@@ -6,7 +6,9 @@ import base64
 import os
 import re
 import random
+import json
 from datetime import datetime
+import streamlit.components.v1 as components
 
 # ==========================================
 # 🔑 제미나이 API 키 설정
@@ -28,7 +30,7 @@ def get_ai_response(prompt):
     raise Exception(f"모든 AI 모델 접근 실패. (마지막 에러: {last_error})")
 
 VOCAB_FILE = 'my_vocab_web.csv'
-WRONG_FILE = 'my_vocab_wrong_web.csv' # ⭐️ 오답노트 파일 추가
+WRONG_FILE = 'my_vocab_wrong_web.csv' # 🔥 오답노트 파일
 
 def load_data(file_path):
     if os.path.exists(file_path):
@@ -38,28 +40,64 @@ def load_data(file_path):
 def save_data(df, file_path):
     df.to_csv(file_path, index=False, encoding='utf-8-sig')
 
-def speak(text, autoplay=True):
+# ⭐️ 1. 사운드바를 없애고 보이지 않게 바로 재생되도록 수정
+def speak(text):
+    pure_text = text.split('[')[0].strip()
     try:
-        tts = gTTS(text=text, lang='en')
+        tts = gTTS(text=pure_text, lang='en')
         tts.save("temp.mp3")
         with open("temp.mp3", "rb") as f:
-            data = f.read()
-            b64 = base64.b64encode(data).decode()
-            audio_tag = f'<audio {"autoplay" if autoplay else ""} controls style="height: 30px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
+            b64 = base64.b64encode(f.read()).decode()
+            # controls 속성을 제거하여 플레이어가 화면에 보이지 않고 즉시 재생만 됨!
+            audio_tag = f'<audio autoplay><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
             st.markdown(audio_tag, unsafe_allow_html=True)
     except Exception:
         pass 
 
-# ⭐️ 1단어당 3번 반복 후 다음 단어로 넘어가는 연속 재생 함수
+# ⭐️ 2. 정밀한 간격(1초, 2.3초)을 맞추기 위한 자바스크립트 연동 연속 듣기
 def play_sequence_audio(words):
-    seq_text = ""
+    audio_data_list = []
     for w in words:
         pure_w = w.split('[')[0].strip()
-        # 마침표(.)를 사용해 1초 대기 효과, 여러 개를 써서 2.3초 대기 효과 생성
-        seq_text += f"{pure_w}. . {pure_w}. . {pure_w}. . . . . " 
-    speak(seq_text)
+        try:
+            tts = gTTS(text=pure_w, lang='en')
+            tts.save("temp_seq.mp3")
+            with open("temp_seq.mp3", "rb") as f:
+                audio_data_list.append(base64.b64encode(f.read()).decode())
+        except:
+            pass
 
-# ⭐️ 모바일 최적화 표 렌더링 함수
+    if not audio_data_list: return
+
+    js_array = json.dumps(audio_data_list)
+    html_code = f"""
+    <audio id="seqPlayer"></audio>
+    <script>
+        const audioData = {js_array};
+        let currentWordIdx = 0;
+        let playCount = 0;
+        const player = document.getElementById("seqPlayer");
+
+        function playNext() {{
+            if(currentWordIdx >= audioData.length) return;
+            player.src = "data:audio/mp3;base64," + audioData[currentWordIdx];
+            player.play().catch(e => console.log(e));
+            player.onended = function() {{
+                playCount++;
+                if(playCount < 3) {{
+                    setTimeout(playNext, 1000); // 같은 단어 3번 반복 사이 1초 대기
+                }} else {{
+                    playCount = 0;
+                    currentWordIdx++;
+                    setTimeout(playNext, 2300); // 다음 단어로 넘어가기 전 2.3초 대기
+                }}
+            }};
+        }}
+        playNext();
+    </script>
+    """
+    components.html(html_code, height=0, width=0)
+
 def render_mobile_table(headers, data):
     html = '<div style="overflow-x: auto;"><table style="width: 100%; border-collapse: collapse; font-size: 14px;">'
     html += "<tr>" + "".join([f"<th style='border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #333; color: white;'>{h}</th>" for h in headers]) + "</tr>"
@@ -71,7 +109,7 @@ def render_mobile_table(headers, data):
 st.set_page_config(page_title="AI 영단어 마스터", layout="centered")
 st.title("🦉 AI 영단어 마스터 Web")
 
-# ⭐️ 요청하신 메뉴 순서 적용
+# ⭐️ 3. 요청하신 순서대로 메뉴 재배치
 menu = st.sidebar.selectbox("메뉴 선택", [
     "🤖 AI 단어 생성", 
     "✨ 단어 일괄 추가", 
@@ -102,16 +140,14 @@ if menu == "🤖 AI 단어 생성":
         [초강력 중요 규칙]
         1. 번호나 리스트 표시 절대 금지.
         2. 영단어에 절대 ** 기호 금지.
-        3. 발음 기호 폰트 깨짐 방지: 특수 강세 기호(ˈ, ˌ)는 완전히 생략하고, 장음 기호(ː) 대신 일반 콜론(:)을 사용.
+        3. 발음 기호 폰트 깨짐 방지: 강세(ˈ, ˌ) 완전 생략, 장음(ː)은 일반 콜론(:) 사용.
         4. 품사와 뜻 통합: '품사 : 뜻' 형태.
-        [형식]: 영단어;[발음기호];품사 : 뜻;실전 출제 스타일 예문
+        [형식]: 영단어;[발음기호];품사 : 뜻;실전 예문
         """
-        
-        with st.spinner("AI가 최적의 서버를 찾아 단어를 생성 중입니다..."):
+        with st.spinner("AI가 단어를 생성 중입니다..."):
             try:
                 response = get_ai_response(prompt)
                 lines = response.text.strip().split('\n')
-                
                 new_rows = []
                 for line in lines:
                     parts = line.split(';')
@@ -122,19 +158,18 @@ if menu == "🤖 AI 단어 생성":
                             'Example': parts[3].strip(), 'Date': datetime.now().strftime("%Y-%m-%d"),
                             'Status': 'Learning', 'Category': category, 'Level': level
                         })
-                
                 if new_rows:
                     new_df = pd.DataFrame(new_rows)
                     df = pd.concat([df, new_df], ignore_index=True).drop_duplicates('Word')
                     save_data(df, VOCAB_FILE)
-                    st.success(f"🎉 {len(new_rows)}개의 단어가 성공적으로 추가되었습니다!")
+                    st.success(f"🎉 {len(new_rows)}개의 단어가 추가되었습니다!")
             except Exception as e:
-                st.error(f"❌ 생성 중 오류가 발생했습니다.\n에러 원인: {e}")
+                st.error(f"❌ 생성 오류: {e}")
 
 # ----------------- ✨ 수동 일괄 추가 -----------------
 elif menu == "✨ 단어 일괄 추가":
     st.header("✨ 단어 일괄 추가")
-    words_input = st.text_area("추가할 단어들을 쉼표(,)로 구분해 입력하세요.")
+    words_input = st.text_area("단어를 쉼표(,)로 구분해 입력하세요.")
     if st.button("✅ 분석 및 추가"):
         if words_input:
             prompt = f"단어: {words_input}\n[형식]: 영단어;[발음기호];품사 : 뜻;실전 예문 (강세기호 생략, 번호 금지)"
@@ -158,7 +193,7 @@ elif menu == "✨ 단어 일괄 추가":
                         save_data(df, VOCAB_FILE)
                         st.success("추가 완료!")
                 except Exception as e:
-                    st.error(f"❌ 분석 중 오류가 발생했습니다.\n에러 원인: {e}")
+                    st.error(f"❌ 오류: {e}")
 
 # ----------------- 📖 단어 관리 / 학습 기록 -----------------
 elif menu in ["📖 단어 관리", "📅 학습 기록"]:
@@ -169,13 +204,12 @@ elif menu in ["📖 단어 관리", "📅 학습 기록"]:
     if view_df.empty:
         st.info("해당하는 단어가 없습니다.")
     else:
-        # 상단 다중 선택 컨트롤
-        selected_indices = st.multiselect("체크박스 (단어 선택)", view_df.index, format_func=lambda x: f"{view_df.loc[x, 'Word']} - {view_df.loc[x, 'Meaning']}")
-        
+        selected_indices = st.multiselect("여러 단어 동시 선택", view_df.index, format_func=lambda x: f"{view_df.loc[x, 'Word']} - {view_df.loc[x, 'Meaning']}")
         col1, col2, col3 = st.columns(3)
+        
         if col2.button("🔊 연속 듣기") and selected_indices:
             words_to_play = [df.loc[i, 'Word'] for i in selected_indices]
-            play_sequence_audio(words_to_play)
+            play_sequence_audio(words_to_play) # ⭐️ 3회 반복 및 대기시간 적용된 함수
             
         if menu == "📖 단어 관리":
             if col1.button("✅ 선택 완료"):
@@ -195,29 +229,27 @@ elif menu in ["📖 단어 관리", "📅 학습 기록"]:
 
         st.divider()
         
-        # ⭐️ 개별 단어 컨트롤러 (언제든 듣기, 개별 완료/삭제 기능)
         for idx, row in view_df.iterrows():
             with st.expander(f"**{row['Word']}** {row['Phonetic']} | {row['Meaning']}"):
                 st.write(f"📅 추가일: {row['Date']}")
                 st.markdown(f"📝 **예문:** {row['Example'].replace(row['Word'], f'**:green[{row['Word']}]**')}")
                 
-                # 플레이어가 화면에 남아있어 원할 때마다 누를 수 있음
-                speak(row['Word'], autoplay=False)
-                
-                # 개별 관리 버튼
-                c1, c2 = st.columns([1, 1])
+                c1, c2, c3 = st.columns(3)
+                if c1.button("🔊 듣기", key=f"btn_{idx}"):
+                    speak(row['Word']) # ⭐️ 사운드바 없이 소리만 나옴
+                    
                 if menu == "📖 단어 관리":
-                    if c1.button("✅ 학습 완료", key=f"done_{idx}"):
+                    if c2.button("✅ 학습 완료", key=f"done_{idx}"):
                         df.loc[idx, 'Status'] = 'Completed'
                         save_data(df, VOCAB_FILE)
                         st.rerun()
                 else:
-                    if c1.button("⏪ 다시 학습", key=f"relearn_{idx}"):
+                    if c2.button("⏪ 다시 학습", key=f"relearn_{idx}"):
                         df.loc[idx, 'Status'] = 'Learning'
                         save_data(df, VOCAB_FILE)
                         st.rerun()
                         
-                if c2.button("🗑️ 삭제", key=f"del_{idx}"):
+                if c3.button("🗑️ 삭제", key=f"del_{idx}"):
                     df = df.drop(idx)
                     save_data(df, VOCAB_FILE)
                     st.rerun()
@@ -226,20 +258,37 @@ elif menu in ["📖 단어 관리", "📅 학습 기록"]:
 elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
     st.header(menu)
     is_wrong_mode = (menu == "🔥 오답 노트 재도전")
-    test_pool = wrong_df if is_wrong_mode else df[df['Status'] == 'Learning']
+    current_pool = wrong_df if is_wrong_mode else df[df['Status'] == 'Learning']
     
-    if test_pool.empty:
-        st.warning("테스트할 단어가 없습니다.")
+    if current_pool.empty:
+        if is_wrong_mode:
+            st.success("🎉 오답 노트가 비어있습니다! 모든 문제를 완벽히 마스터하셨네요!")
+        else:
+            st.warning("테스트할 단어가 없습니다.")
     else:
-        # ⭐️ 엔터키 연동을 위한 상태 관리 폼 구조
-        if 'test_phase' not in st.session_state:
-            st.session_state.test_phase = 'ask'
-            st.session_state.test_word = test_pool.sample(1).iloc[0]
+        # ⭐️ 4. 엔터키 한방에 다음문제로 넘어가는 초고속 테스트 로직
+        if 'test_menu' not in st.session_state or st.session_state.test_menu != menu:
+            st.session_state.test_menu = menu
+            st.session_state.prev_result = None
+            st.session_state.test_word = current_pool.sample(1).iloc[0]
             st.session_state.test_mode = random.choice(['E2K', 'K2E'])
 
-        word_info = st.session_state.test_word
-        
-        if st.session_state.test_phase == 'ask':
+        # 방금 푼 문제의 결과 및 예문 상단 표시 (입력칸은 비워져 있음)
+        if st.session_state.prev_result:
+            res = st.session_state.prev_result
+            if res['correct']:
+                st.success(f"✅ 이전 문제 정답! ({res['word']} : {res['meaning']})")
+            else:
+                st.error(f"❌ 이전 문제 오답... 정답: **{res['word']}** | {res['meaning']} (내 입력: {res['user_ans']})")
+            st.info(f"💡 예문: {res['example']}")
+            speak(res['word']) # 방금 푼 단어 발음 자동재생
+
+        st.divider()
+
+        # 현재 풀어야 할 새로운 문제 표시
+        if 'test_word' in st.session_state:
+            word_info = st.session_state.test_word
+
             if st.session_state.test_mode == 'E2K':
                 st.subheader(f"Q: {word_info['Word']} {word_info['Phonetic']}")
                 st.caption("이 단어의 뜻은?")
@@ -247,11 +296,11 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                 st.subheader(f"Q: {word_info['Meaning']}")
                 st.caption("해당하는 영어 단어는?")
 
-            # 엔터 제출시 clear_on_submit=True 로 입력칸 자동 초기화!
+            # 폼(form)을 사용하여 엔터키 입력 시 자동으로 입력칸을 비우고 제출함
             with st.form("test_form", clear_on_submit=True):
-                ans = st.text_input("정답 입력 (제출은 엔터)")
-                submitted = st.form_submit_button("제출")
-                
+                ans = st.text_input("✍️ 정답을 입력하고 엔터(Enter)를 누르세요.")
+                submitted = st.form_submit_button("제출 (엔터)")
+
                 if submitted and ans:
                     correct = False
                     if st.session_state.test_mode == 'E2K':
@@ -260,11 +309,8 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                         if user_stems & correct_stems: correct = True
                     else:
                         if ans.lower() == word_info['Word'].lower(): correct = True
-                    
-                    st.session_state.is_correct = correct
-                    st.session_state.test_phase = 'result'
-                    
-                    # 오답 노트 데이터 갱신
+
+                    # ⭐️ 오답노트 저장 시스템
                     if correct:
                         if is_wrong_mode and word_info['Word'] in wrong_df['Word'].values:
                             wrong_df = wrong_df[wrong_df['Word'] != word_info['Word']]
@@ -274,29 +320,21 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                             new_wrong = pd.DataFrame([word_info])
                             wrong_df = pd.concat([wrong_df, new_wrong], ignore_index=True)
                             save_data(wrong_df, WRONG_FILE)
-                    
-                    st.rerun()
 
-        elif st.session_state.test_phase == 'result':
-            if st.session_state.is_correct:
-                st.success("✅ 완벽합니다!")
-            else:
-                st.error(f"❌ 아쉽네요. 정답: **{word_info['Word']}** | {word_info['Meaning']}")
-            
-            st.info(f"💡 예문: {word_info['Example']}")
-            speak(word_info['Word'])
-            
-            # 다음 문제로 넘어가기 (역시 폼 구조로 묶어 엔터키 지원)
-            with st.form("next_form"):
-                if st.form_submit_button("다음 문제 (엔터)"):
-                    st.session_state.test_phase = 'ask'
-                    # 새 문제 뽑기
-                    updated_pool = wrong_df if is_wrong_mode else df[df['Status'] == 'Learning']
-                    if not updated_pool.empty:
-                        st.session_state.test_word = updated_pool.sample(1).iloc[0]
+                    # 현재 결과 저장 (다음 화면에서 상단에 띄워주기 위함)
+                    st.session_state.prev_result = {
+                        'correct': correct, 'word': word_info['Word'],
+                        'meaning': word_info['Meaning'], 'example': word_info['Example'],
+                        'user_ans': ans
+                    }
+
+                    # 즉시 새로운 문제 뽑기
+                    new_pool = wrong_df if is_wrong_mode else df[df['Status'] == 'Learning']
+                    if not new_pool.empty:
+                        st.session_state.test_word = new_pool.sample(1).iloc[0]
                         st.session_state.test_mode = random.choice(['E2K', 'K2E'])
                     else:
-                        del st.session_state.test_phase
+                        del st.session_state.test_word
                     st.rerun()
 
 # ----------------- 📊 학습 통계 -----------------
@@ -308,7 +346,7 @@ elif menu == "📊 학습 통계":
         stats = df.groupby(['Category', 'Level']).size().reset_index(name='Count')
         st.dataframe(stats, hide_index=True, use_container_width=True)
 
-# ----------------- 📚 영어 기초 가이드 (모바일 완벽 대응) -----------------
+# ----------------- 📚 영어 기초 가이드 -----------------
 elif menu == "📚 영어 기초 가이드":
     st.header("📚 기초 영어 완벽 가이드")
     st.caption("영포자도 이해할 수 있는 원리 위주의 핵심 가이드입니다.")
@@ -317,8 +355,6 @@ elif menu == "📚 영어 기초 가이드":
     
     with tab1:
         st.subheader("🗣️ 영어 발음 기호표 (IPA)")
-        
-        # ⭐️ 모바일 가로 스크롤 완벽 대응 HTML 표
         headers = ["번호", "발음기호", "소리", "번호", "발음기호", "소리", "번호", "발음기호", "소리"]
         data = [
             ["1", "[a]", "아", "18", "[ou]", "오우", "35", "[ʒ]", "쥐"],
