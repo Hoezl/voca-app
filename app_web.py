@@ -269,7 +269,7 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
         else:
             st.warning("학습 중인 단어가 없습니다.")
     else:
-        # 문제 목록 생성 및 초기화
+        # 문제 목록 큐(Queue) 생성
         if 'test_menu' not in st.session_state or st.session_state.test_menu != menu:
             st.session_state.test_menu = menu
             st.session_state.prev_result = None
@@ -279,7 +279,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
             random.shuffle(queue)
             st.session_state.test_queue = queue
             
-            # ⭐️ [버그 해결 핵심] 모드가 멋대로 바뀌지 않게 고정 기록 변수 생성
             if 'current_test_mode' in st.session_state:
                 del st.session_state.current_test_mode
 
@@ -302,15 +301,20 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
         if not st.session_state.test_queue:
             st.success("🎉 준비된 모든 단어의 테스트가 끝났습니다! 정말 고생하셨습니다.")
             if st.button("🔄 처음부터 다시 풀기"):
-                queue = current_pool['Word'].tolist()
-                random.shuffle(queue)
-                st.session_state.test_queue = queue
-                st.session_state.prev_result = None
-                if 'current_test_mode' in st.session_state:
-                    del st.session_state.current_test_mode
-                st.rerun()
+                # 오답노트에서 재시작 버튼 누를 시 데이터 갱신
+                refresh_pool = wrong_df if is_wrong_mode else df[df['Status'] == 'Learning']
+                if not refresh_pool.empty:
+                    queue = refresh_pool['Word'].tolist()
+                    random.shuffle(queue)
+                    st.session_state.test_queue = queue
+                    st.session_state.prev_result = None
+                    if 'current_test_mode' in st.session_state:
+                        del st.session_state.current_test_mode
+                    st.rerun()
+                else:
+                    st.success("더 이상 풀 문제가 없습니다!")
         else:
-            # ⭐️ 제출 중에 모드가 바뀌지 않도록 현재 문제의 모드를 세션에 단단히 고정
+            # 모드 고정
             if 'current_test_mode' not in st.session_state:
                 st.session_state.current_test_mode = random.choice(['E2K', 'K2E'])
             test_mode = st.session_state.current_test_mode
@@ -343,9 +347,7 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                 if submitted and ans:
                     correct = False
                     
-                    # ⭐️ 천사 같은 채점 로직
                     if test_mode == 'E2K':
-                        # 한국어 채점: 기호, 공백, 품사 태그 싹 무시하고 의미만 맞으면 정답
                         clean_ans = re.sub(r'[\s\(\)\[\]\,\/]', '', ans)
                         clean_meaning = re.sub(r'[\s\(\)\[\]\,\/]', '', word_info['Meaning'])
                         pos_tags = ["명사", "동사", "대명사", "형용사", "부사", "전치사", "접속사", "감탄사", ":"]
@@ -355,24 +357,24 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                         if clean_ans and clean_ans in clean_meaning:
                             correct = True
                     else:
-                        # 영어 채점: 대소문자 무시, 알파벳만 비교 (water == Water 무조건 정답)
                         clean_ans = re.sub(r'[^a-zA-Z]', '', ans).lower()
                         clean_word = re.sub(r'[^a-zA-Z]', '', word_info['Word']).lower()
                         if clean_ans == clean_word:
                             correct = True
 
-                    # 오답노트 저장 및 삭제 로직
+                    # ⭐️ 3. 오답노트 동기화의 핵심 로직!
                     if correct:
-                        if is_wrong_mode and word_info['Word'] in wrong_df['Word'].values:
+                        # 정답을 맞추면 실전 테스트든 오답 노트든 상관없이 무조건 오답 노트에서 완전 삭제!
+                        if word_info['Word'] in wrong_df['Word'].values:
                             wrong_df = wrong_df[wrong_df['Word'] != word_info['Word']]
                             save_data(wrong_df, WRONG_FILE)
                     else:
+                        # 틀리면 무조건 오답 노트에 추가
                         if word_info['Word'] not in wrong_df['Word'].values:
-                            new_wrong = pd.DataFrame([word_info])
+                            new_wrong = pd.DataFrame([word_info.to_dict()])
                             wrong_df = pd.concat([wrong_df, new_wrong], ignore_index=True)
                             save_data(wrong_df, WRONG_FILE)
 
-                    # 결과 저장 후 대기열에서 제거 & 모드 초기화
                     st.session_state.prev_result = {
                         'correct': correct, 'word': word_info['Word'],
                         'meaning': word_info['Meaning'], 'example': word_info['Example'],
@@ -380,7 +382,7 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                     }
                     st.session_state.audio_played = False
                     st.session_state.test_queue.pop(0) 
-                    del st.session_state.current_test_mode # 다음 문제를 위해 모드 삭제
+                    del st.session_state.current_test_mode
                     st.rerun()
 
 # ----------------- 📊 학습 통계 -----------------
@@ -392,7 +394,7 @@ elif menu == "📊 학습 통계":
         stats = df.groupby(['Category', 'Level']).size().reset_index(name='Count')
         st.dataframe(stats, hide_index=True, use_container_width=True)
 
-# ----------------- 📚 영어 기초 가이드 (동사표 대폭 확장) -----------------
+# ----------------- 📚 영어 기초 가이드 -----------------
 elif menu == "📚 영어 기초 가이드":
     st.header("📚 기초 영어 완벽 가이드")
     st.caption("영포자도 이해할 수 있는 원리 위주의 핵심 가이드입니다.")
@@ -471,7 +473,6 @@ elif menu == "📚 영어 기초 가이드":
         st.divider()
 
         st.markdown("### 2. 불규칙 동사 모음 (Irregular Verbs)")
-        st.write("규칙 없이 변하므로 가장 헷갈리는 필수 단어들을 4가지 패턴으로 분리했습니다.")
         
         st.markdown("#### ① A-A-A 형 (형태가 모두 같음)")
         headers_aaa = ["현재(V)", "과거(V-ed)", "과거분사(p.p)", "뜻"]
@@ -602,7 +603,7 @@ elif menu == "📚 영어 기초 가이드":
 
         **■ 3. 조동사 (추측/의무/used to)**
         * **추측**: must (99% 확신), may (50%), cannot (~일 리 없다)
-        * **의무**: must / have to (강제), 시ould (부드러운 조언)
+        * **의무**: must / have to (강제), should (부드러운 조언)
         * **used to**: 과거엔 했지만 '지금은 절대 안 해!'라는 뉘앙스. "I used to smoke."
         """)
 
