@@ -7,6 +7,7 @@ import os
 import re
 import random
 import json
+import time
 from datetime import datetime
 import streamlit.components.v1 as components
 
@@ -40,7 +41,7 @@ def load_data(file_path):
 def save_data(df, file_path):
     df.to_csv(file_path, index=False, encoding='utf-8-sig')
 
-# ⭐️ 1. 사운드바를 없애고 보이지 않게 바로 재생되도록 수정
+# ⭐️ 1. 원할 때마다 무한 반복 재생 가능한 듣기 함수 (스트림릿 버그 우회)
 def speak(text):
     pure_text = text.split('[')[0].strip()
     try:
@@ -48,13 +49,13 @@ def speak(text):
         tts.save("temp.mp3")
         with open("temp.mp3", "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
-            # controls 속성을 제거하여 플레이어가 화면에 보이지 않고 즉시 재생만 됨!
-            audio_tag = f'<audio autoplay><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
-            st.markdown(audio_tag, unsafe_allow_html=True)
+            unique_id = str(time.time()).replace('.', '') # 매번 새로운 ID 부여
+            audio_tag = f'<audio id="audio_{unique_id}" autoplay><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
+            components.html(audio_tag, height=0, width=0)
     except Exception:
         pass 
 
-# ⭐️ 2. 정밀한 간격(1초, 2.3초)을 맞추기 위한 자바스크립트 연동 연속 듣기
+# ⭐️ 2. 정밀 간격 연동 연속 듣기 (1초 대기, 다음단어 2.3초)
 def play_sequence_audio(words):
     audio_data_list = []
     for w in words:
@@ -85,11 +86,11 @@ def play_sequence_audio(words):
             player.onended = function() {{
                 playCount++;
                 if(playCount < 3) {{
-                    setTimeout(playNext, 1000); // 같은 단어 3번 반복 사이 1초 대기
+                    setTimeout(playNext, 1000); 
                 }} else {{
                     playCount = 0;
                     currentWordIdx++;
-                    setTimeout(playNext, 2300); // 다음 단어로 넘어가기 전 2.3초 대기
+                    setTimeout(playNext, 2300); 
                 }}
             }};
         }}
@@ -109,7 +110,6 @@ def render_mobile_table(headers, data):
 st.set_page_config(page_title="AI 영단어 마스터", layout="centered")
 st.title("🦉 AI 영단어 마스터 Web")
 
-# ⭐️ 3. 요청하신 순서대로 메뉴 재배치
 menu = st.sidebar.selectbox("메뉴 선택", [
     "🤖 AI 단어 생성", 
     "✨ 단어 일괄 추가", 
@@ -209,7 +209,7 @@ elif menu in ["📖 단어 관리", "📅 학습 기록"]:
         
         if col2.button("🔊 연속 듣기") and selected_indices:
             words_to_play = [df.loc[i, 'Word'] for i in selected_indices]
-            play_sequence_audio(words_to_play) # ⭐️ 3회 반복 및 대기시간 적용된 함수
+            play_sequence_audio(words_to_play) 
             
         if menu == "📖 단어 관리":
             if col1.button("✅ 선택 완료"):
@@ -235,8 +235,8 @@ elif menu in ["📖 단어 관리", "📅 학습 기록"]:
                 st.markdown(f"📝 **예문:** {row['Example'].replace(row['Word'], f'**:green[{row['Word']}]**')}")
                 
                 c1, c2, c3 = st.columns(3)
-                if c1.button("🔊 듣기", key=f"btn_{idx}"):
-                    speak(row['Word']) # ⭐️ 사운드바 없이 소리만 나옴
+                if c1.button("🔊 듣기", key=f"btn_{idx}_{time.time()}"): # 고유 ID로 매번 재생되게 함
+                    speak(row['Word']) 
                     
                 if menu == "📖 단어 관리":
                     if c2.button("✅ 학습 완료", key=f"done_{idx}"):
@@ -262,18 +262,21 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
     
     if current_pool.empty:
         if is_wrong_mode:
-            st.success("🎉 오답 노트가 비어있습니다! 모든 문제를 완벽히 마스터하셨네요!")
+            st.success("🎉 오답 노트가 비어있습니다! 완벽합니다!")
         else:
             st.warning("테스트할 단어가 없습니다.")
     else:
-        # ⭐️ 4. 엔터키 한방에 다음문제로 넘어가는 초고속 테스트 로직
+        # ⭐️ 3. 엔터키 완벽 연동 및 1회 오디오 재생 시스템
         if 'test_menu' not in st.session_state or st.session_state.test_menu != menu:
             st.session_state.test_menu = menu
             st.session_state.prev_result = None
-            st.session_state.test_word = current_pool.sample(1).iloc[0]
-            st.session_state.test_mode = random.choice(['E2K', 'K2E'])
+            st.session_state.audio_played = True 
+            
+            if not current_pool.empty:
+                st.session_state.test_word = current_pool.sample(1).iloc[0]
+                st.session_state.test_mode = random.choice(['E2K', 'K2E'])
 
-        # 방금 푼 문제의 결과 및 예문 상단 표시 (입력칸은 비워져 있음)
+        # 방금 제출한 결과 표시 및 딱 한 번만 발음 재생
         if st.session_state.prev_result:
             res = st.session_state.prev_result
             if res['correct']:
@@ -281,12 +284,15 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
             else:
                 st.error(f"❌ 이전 문제 오답... 정답: **{res['word']}** | {res['meaning']} (내 입력: {res['user_ans']})")
             st.info(f"💡 예문: {res['example']}")
-            speak(res['word']) # 방금 푼 단어 발음 자동재생
+            
+            if not st.session_state.get('audio_played'):
+                speak(res['word'])
+                st.session_state.audio_played = True # 딱 한 번 울리고 플래그 잠금
 
         st.divider()
 
-        # 현재 풀어야 할 새로운 문제 표시
-        if 'test_word' in st.session_state:
+        # 새로운 문제 표시 및 입력창 (새 문제마다 고유 key를 부여해 입력칸이 무조건 비워지게 만듦)
+        if 'test_word' in st.session_state and not current_pool.empty:
             word_info = st.session_state.test_word
 
             if st.session_state.test_mode == 'E2K':
@@ -296,46 +302,45 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                 st.subheader(f"Q: {word_info['Meaning']}")
                 st.caption("해당하는 영어 단어는?")
 
-            # 폼(form)을 사용하여 엔터키 입력 시 자동으로 입력칸을 비우고 제출함
-            with st.form("test_form", clear_on_submit=True):
-                ans = st.text_input("✍️ 정답을 입력하고 엔터(Enter)를 누르세요.")
-                submitted = st.form_submit_button("제출 (엔터)")
+            # 폼(form) 없이 다이렉트 텍스트 인풋으로 엔터 작동 보장
+            input_key = f"ans_{word_info['Word']}_{len(wrong_df)}"
+            ans = st.text_input("✍️ 정답을 입력하고 엔터(Enter)를 누르세요.", key=input_key)
 
-                if submitted and ans:
-                    correct = False
-                    if st.session_state.test_mode == 'E2K':
-                        user_stems = set(re.split(r'[,\s]+', ans))
-                        correct_stems = set(re.split(r'[,\s]+', word_info['Meaning']))
-                        if user_stems & correct_stems: correct = True
-                    else:
-                        if ans.lower() == word_info['Word'].lower(): correct = True
+            if ans:
+                correct = False
+                if st.session_state.test_mode == 'E2K':
+                    user_stems = set(re.split(r'[,\s]+', ans))
+                    correct_stems = set(re.split(r'[,\s]+', word_info['Meaning']))
+                    if user_stems & correct_stems: correct = True
+                else:
+                    if ans.lower() == word_info['Word'].lower(): correct = True
 
-                    # ⭐️ 오답노트 저장 시스템
-                    if correct:
-                        if is_wrong_mode and word_info['Word'] in wrong_df['Word'].values:
-                            wrong_df = wrong_df[wrong_df['Word'] != word_info['Word']]
-                            save_data(wrong_df, WRONG_FILE)
-                    else:
-                        if not is_wrong_mode and word_info['Word'] not in wrong_df['Word'].values:
-                            new_wrong = pd.DataFrame([word_info])
-                            wrong_df = pd.concat([wrong_df, new_wrong], ignore_index=True)
-                            save_data(wrong_df, WRONG_FILE)
+                # 오답노트 필터링 로직
+                if correct:
+                    if is_wrong_mode and word_info['Word'] in wrong_df['Word'].values:
+                        wrong_df = wrong_df[wrong_df['Word'] != word_info['Word']]
+                        save_data(wrong_df, WRONG_FILE)
+                else:
+                    if word_info['Word'] not in wrong_df['Word'].values:
+                        new_wrong = pd.DataFrame([word_info])
+                        wrong_df = pd.concat([wrong_df, new_wrong], ignore_index=True)
+                        save_data(wrong_df, WRONG_FILE)
 
-                    # 현재 결과 저장 (다음 화면에서 상단에 띄워주기 위함)
-                    st.session_state.prev_result = {
-                        'correct': correct, 'word': word_info['Word'],
-                        'meaning': word_info['Meaning'], 'example': word_info['Example'],
-                        'user_ans': ans
-                    }
-
-                    # 즉시 새로운 문제 뽑기
-                    new_pool = wrong_df if is_wrong_mode else df[df['Status'] == 'Learning']
-                    if not new_pool.empty:
-                        st.session_state.test_word = new_pool.sample(1).iloc[0]
-                        st.session_state.test_mode = random.choice(['E2K', 'K2E'])
-                    else:
-                        del st.session_state.test_word
-                    st.rerun()
+                st.session_state.prev_result = {
+                    'correct': correct, 'word': word_info['Word'],
+                    'meaning': word_info['Meaning'], 'example': word_info['Example'],
+                    'user_ans': ans
+                }
+                st.session_state.audio_played = False # 다음 번에 오디오 재생 허용
+                
+                # 즉시 새로운 문제 뽑고 화면 새로고침
+                new_pool = wrong_df if is_wrong_mode else df[df['Status'] == 'Learning']
+                if not new_pool.empty:
+                    st.session_state.test_word = new_pool.sample(1).iloc[0]
+                    st.session_state.test_mode = random.choice(['E2K', 'K2E'])
+                else:
+                    if 'test_word' in st.session_state: del st.session_state.test_word
+                st.rerun()
 
 # ----------------- 📊 학습 통계 -----------------
 elif menu == "📊 학습 통계":
@@ -346,7 +351,7 @@ elif menu == "📊 학습 통계":
         stats = df.groupby(['Category', 'Level']).size().reset_index(name='Count')
         st.dataframe(stats, hide_index=True, use_container_width=True)
 
-# ----------------- 📚 영어 기초 가이드 -----------------
+# ----------------- 📚 영어 기초 가이드 (동사표 완벽 분리) -----------------
 elif menu == "📚 영어 기초 가이드":
     st.header("📚 기초 영어 완벽 가이드")
     st.caption("영포자도 이해할 수 있는 원리 위주의 핵심 가이드입니다.")
@@ -392,35 +397,74 @@ elif menu == "📚 영어 기초 가이드":
         """)
 
     with tab2:
-        st.subheader("🔄 동사 변화표 (불규칙 위주)")
-        headers_v = ["패턴", "현재(V)", "과거(V-ed)", "과거분사(p.p)", "뜻"]
-        data_v = [
-            ["A-A-A", "put", "put", "put", "놓다"],
-            ["A-A-A", "cut", "cut", "cut", "자르다"],
-            ["A-A-A", "read", "read(레드)", "read(레드)", "읽다"],
-            ["A-B-A", "come", "came", "come", "오다"],
-            ["A-B-A", "run", "ran", "run", "달리다"],
-            ["A-B-A", "become", "became", "become", "~이 되다"],
-            ["A-B-B", "buy", "bought", "bought", "사다"],
-            ["A-B-B", "catch", "caught", "caught", "잡다"],
-            ["A-B-B", "feel", "felt", "felt", "느끼다"],
-            ["A-B-B", "find", "found", "found", "찾다"],
-            ["A-B-B", "have", "had", "had", "가지다"],
-            ["A-B-B", "make", "made", "made", "만들다"],
-            ["A-B-B", "say", "said", "said", "말하다"],
-            ["A-B-B", "teach", "taught", "taught", "가르치다"],
-            ["A-B-C", "be(am/is)", "was/were", "been", "이다, 있다"],
-            ["A-B-C", "begin", "began", "begun", "시작하다"],
-            ["A-B-C", "break", "broke", "broken", "깨다"],
-            ["A-B-C", "do", "did", "done", "하다"],
-            ["A-B-C", "eat", "ate", "eaten", "먹다"],
-            ["A-B-C", "go", "went", "gone", "가다"],
-            ["A-B-C", "know", "knew", "known", "알다"],
-            ["A-B-C", "see", "saw", "seen", "보다"],
-            ["A-B-C", "take", "took", "taken", "가져가다"],
-            ["A-B-C", "write", "wrote", "written", "쓰다"]
+        st.subheader("🔄 동사 변화표 (규칙 & 불규칙)")
+        st.write("동사는 과거형, 과거분사(p.p)로 변할 때 규칙적으로 변하는 것과 불규칙하게 변하는 것으로 나뉩니다.")
+        
+        # ⭐️ 4. 규칙/불규칙 완전히 분리 및 패턴별 표 분리
+        st.markdown("### 1. 규칙 동사 (Regular Verbs)")
+        st.write("대부분의 동사는 형태에 따라 일정한 규칙을 가지고 `-ed`가 붙습니다.")
+        headers_reg = ["규칙 패턴", "현재(V)", "과거(V-ed)", "과거분사(p.p)", "뜻"]
+        data_reg = [
+            ["일반적인 경우 (+ed)", "play", "played", "played", "놀다"],
+            ["-e로 끝나는 경우 (+d)", "like", "liked", "liked", "좋아하다"],
+            ["자음+y로 끝나는 경우 (y->ied)", "study", "studied", "studied", "공부하다"],
+            ["단모음+단자음 (자음추가+ed)", "stop", "stopped", "stopped", "멈추다"]
         ]
-        render_mobile_table(headers_v, data_v)
+        render_mobile_table(headers_reg, data_reg)
+
+        st.divider()
+
+        st.markdown("### 2. 불규칙 동사 (Irregular Verbs)")
+        st.write("규칙 없이 변하므로 패턴별로 나누어 암기해야 합니다.")
+        
+        st.markdown("#### ① A-A-A 형 (형태가 모두 같음)")
+        headers_aaa = ["현재(V)", "과거(V-ed)", "과거분사(p.p)", "뜻"]
+        data_aaa = [
+            ["put", "put", "put", "놓다"],
+            ["cut", "cut", "cut", "자르다"],
+            ["read", "read(레드)", "read(레드)", "읽다"],
+            ["hit", "hit", "hit", "치다"]
+        ]
+        render_mobile_table(headers_aaa, data_aaa)
+
+        st.markdown("#### ② A-B-A 형 (현재와 과거분사가 같음)")
+        headers_aba = ["현재(V)", "과거(V-ed)", "과거분사(p.p)", "뜻"]
+        data_aba = [
+            ["come", "came", "come", "오다"],
+            ["run", "ran", "run", "달리다"],
+            ["become", "became", "become", "~이 되다"]
+        ]
+        render_mobile_table(headers_aba, data_aba)
+
+        st.markdown("#### ③ A-B-B 형 (과거와 과거분사가 같음)")
+        headers_abb = ["현재(V)", "과거(V-ed)", "과거분사(p.p)", "뜻"]
+        data_abb = [
+            ["buy", "bought", "bought", "사다"],
+            ["catch", "caught", "caught", "잡다"],
+            ["feel", "felt", "felt", "느끼다"],
+            ["find", "found", "found", "찾다"],
+            ["have", "had", "had", "가지다"],
+            ["make", "made", "made", "만들다"],
+            ["say", "said", "said", "말하다"],
+            ["teach", "taught", "taught", "가르치다"]
+        ]
+        render_mobile_table(headers_abb, data_abb)
+
+        st.markdown("#### ④ A-B-C 형 (3개가 모두 다름)")
+        headers_abc = ["현재(V)", "과거(V-ed)", "과거분사(p.p)", "뜻"]
+        data_abc = [
+            ["be(am/is/are)", "was/were", "been", "이다, 있다"],
+            ["begin", "began", "begun", "시작하다"],
+            ["break", "broke", "broken", "깨다"],
+            ["do", "did", "done", "하다"],
+            ["eat", "ate", "eaten", "먹다"],
+            ["go", "went", "gone", "가다"],
+            ["know", "knew", "known", "알다"],
+            ["see", "saw", "seen", "보다"],
+            ["take", "took", "taken", "가져가다"],
+            ["write", "wrote", "written", "쓰다"]
+        ]
+        render_mobile_table(headers_abc, data_abc)
 
     with tab3:
         st.subheader("🌱 기초 구문 (명사, 대명사, 전치사)")
