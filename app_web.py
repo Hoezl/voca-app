@@ -12,7 +12,7 @@ from datetime import datetime
 # 🔑 제미나이 API 키 설정
 GEMINI_API_KEY = "AIzaSyAmZ1aHJ0d9TJoabKY7Mn5zAhZiAH3UlSo"
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash') # 할당량 넉넉한 1.5 버전 적용 완료!
+model = genai.GenerativeModel('gemini-1.5-flash') 
 # ==========================================
 
 VOCAB_FILE = 'my_vocab_web.csv'
@@ -42,7 +42,6 @@ def speak(text):
 st.set_page_config(page_title="AI 영단어 마스터", layout="centered")
 st.title("🦉 AI 영단어 마스터 Web")
 
-# 메뉴에 기초 가이드 추가
 menu = st.sidebar.selectbox("메뉴 선택", ["🤖 AI 단어 생성", "✨ 단어 일괄 추가", "📖 단어 관리", "📅 학습 기록", "📝 실전 테스트", "📊 학습 통계", "📚 영어 기초 가이드"])
 
 df = load_data()
@@ -67,12 +66,10 @@ if menu == "🤖 AI 단어 생성":
         4. 품사와 뜻 통합: '품사 : 뜻' 형태.
         [형식]: 영단어;[발음기호];품사 : 뜻;실전 출제 스타일 예문
         """
-        
         with st.spinner("AI가 단어를 고르고 있습니다..."):
             try:
                 response = model.generate_content(prompt)
                 lines = response.text.strip().split('\n')
-                
                 new_rows = []
                 for line in lines:
                     parts = line.split(';')
@@ -83,7 +80,6 @@ if menu == "🤖 AI 단어 생성":
                             'Example': parts[3].strip(), 'Date': datetime.now().strftime("%Y-%m-%d"),
                             'Status': 'Learning', 'Category': category, 'Level': level
                         })
-                
                 if new_rows:
                     new_df = pd.DataFrame(new_rows)
                     df = pd.concat([df, new_df], ignore_index=True).drop_duplicates('Word')
@@ -128,7 +124,6 @@ elif menu in ["📖 단어 관리", "📅 학습 기록"]:
         st.info("해당하는 단어가 없습니다.")
     else:
         selected_indices = st.multiselect("체크박스 (단어 선택)", view_df.index, format_func=lambda x: f"{view_df.loc[x, 'Word']} - {view_df.loc[x, 'Meaning']}")
-        
         col1, col2, col3 = st.columns(3)
         if menu == "📖 단어 관리":
             if col1.button("✅ 학습 완료"):
@@ -140,10 +135,8 @@ elif menu in ["📖 단어 관리", "📅 학습 기록"]:
                 df.loc[selected_indices, 'Status'] = 'Learning'
                 save_data(df)
                 st.rerun()
-                
         if col2.button("🔊 선택 발음 듣기") and selected_indices:
             speak(df.loc[selected_indices[0], 'Word']) 
-
         if col3.button("🗑️ 삭제"):
             df = df.drop(selected_indices)
             save_data(df)
@@ -161,26 +154,21 @@ elif menu in ["📖 단어 관리", "📅 학습 기록"]:
 elif menu == "📝 실전 테스트":
     st.header("📝 실전 랜덤 테스트")
     test_pool = df[df['Status'] == 'Learning']
-    
     if test_pool.empty:
         st.warning("테스트할 단어가 없습니다. 단어를 먼저 추가해주세요.")
     else:
         if 'test_word' not in st.session_state:
             st.session_state.test_word = test_pool.sample(1).iloc[0]
             st.session_state.test_mode = random.choice(['E2K', 'K2E'])
-
         word_info = st.session_state.test_word
-        
         if st.session_state.test_mode == 'E2K':
             st.subheader(f"Q: {word_info['Word']} {word_info['Phonetic']}")
             st.caption("이 단어의 뜻은?")
         else:
             st.subheader(f"Q: {word_info['Meaning']}")
             st.caption("해당하는 영어 단어는?")
-
         ans = st.text_input("정답 입력 (제출은 엔터)")
-        
-        if ans: # 엔터를 치거나 입력이 있을 때
+        if ans:
             correct = False
             if st.session_state.test_mode == 'E2K':
                 user_stems = set(re.split(r'[,\s]+', ans))
@@ -189,14 +177,11 @@ elif menu == "📝 실전 테스트":
             else:
                 if ans.lower() == word_info['Word'].lower(): correct = True
             
-            if correct:
-                st.success("✅ 완벽합니다!")
-            else:
-                st.error(f"❌ 아쉽네요. 정답: **{word_info['Word']}** | {word_info['Meaning']}")
+            if correct: st.success("✅ 완벽합니다!")
+            else: st.error(f"❌ 아쉽네요. 정답: **{word_info['Word']}** | {word_info['Meaning']}")
             
             st.info(f"💡 예문: {word_info['Example']}")
             speak(word_info['Word'])
-            
             if st.button("다음 문제"):
                 del st.session_state.test_word
                 st.rerun()
@@ -209,39 +194,46 @@ elif menu == "📊 학습 통계":
         stats = df.groupby(['Category', 'Level']).size().reset_index(name='Count')
         st.dataframe(stats, hide_index=True, use_container_width=True)
 
-# ----------------- 📚 영어 기초 가이드 (완벽 복원) -----------------
+# ----------------- 📚 영어 기초 가이드 (이미지 연동) -----------------
 elif menu == "📚 영어 기초 가이드":
     st.header("📚 기초 영어 완벽 가이드")
     st.caption("영포자도 이해할 수 있는 원리 위주의 핵심 가이드입니다.")
     
-    # 5개의 탭 생성
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["🗣️발음/품사", "🔄동사표", "🌱기초구문", "🌿문장/시제", "🌳심화문법"])
     
     with tab1:
-        st.subheader("🗣️ 영어 발음 기호표 (IPA)")
-        st.markdown("""
-        | 번호 | 발음기호 | 소리 | 번호 | 발음기호 | 소리 | 번호 | 발음기호 | 소리 |
-        |---|---|---|---|---|---|---|---|---|
-        | 1 | `[a]` | 아 | 18 | `[ou]` | 오우 | 35 | `[ʒ]` | 쥐 |
-        | 2 | `[e]` | 에 | 19 | `[iə]` | 이어 | 36 | `[tʃ]` | 취 |
-        | 3 | `[æ]` | 애 | 20 | `[eə]` | 에어 | 37 | `[dʒ]` | 쥬(쥐) |
-        | 4 | `[i]` | 이 | 21 | `[uə]` | 우어 | 38 | `[h]` | 흐 |
-        | 5 | `[ɔ]` | 오 | 22 | `[p]` | 프 | 39 | `[r]` | ㄹ (굴림) |
-        | 6 | `[u]` | 우 | 23 | `[b]` | 브 | 40 | `[m]` | ㅁ |
-        | 7 | `[ə]` | 어 | 24 | `[t]` | 트 | 41 | `[n]` | ㄴ |
-        | 8 | `[ʌ]` | 어(강함) | 25 | `[d]` | 드 | 42 | `[ŋ]` | 응 |
-        | 9 | `[a:]` | 아: | 26 | `[k]` | 크 | 43 | `[l]` | ㄹ (닿음) |
-        | 10 | `[i:]` | 이: | 27 | `[g]` | 그 | 44 | `[j]` | 이 (반모음) |
-        | 11 | `[ɔ:]` | 오: | 28 | `[f]` | 프 | 45 | `[w]` | 우 (반모음) |
-        | 12 | `[u:]` | 우: | 29 | `[v]` | 브 | 46 | `[wa]` | 와 |
-        | 13 | `[ə:]` | 어: | 30 | `[θ]` | 쓰 (번데기)| 47 | `[wɔ]` | 워 |
-        | 14 | `[ai]` | 아이 | 31 | `[ð]` | 드 (돼지꼬리)| 48 | `[ju]` | 유 |
-        | 15 | `[ei]` | 에이 | 32 | `[s]` | 스 | 49 | `[dʒa]` | 쟈 |
-        | 16 | `[au]` | 아우 | 33 | `[z]` | 즈 | 50 | `[tʃa]` | 챠 |
-        | 17 | `[ɔi]` | 오이 | 34 | `[ʃ]` | 쉬 | - | - | - |
-        """)
+        st.subheader("🗣️ 영어 발음 기호표 (그림 연동)")
+        st.write("깃허브의 `images` 폴더에 `1.png`, `2.png` 형식으로 파일을 올리면 아래에 자동으로 나타납니다!")
         
-        st.divider()
+        # 50가지 발음 기호 데이터 (번호, 기호, 한글발음)
+        phonetics_data = [
+            (1, "[a]", "아"), (2, "[e]", "에"), (3, "[æ]", "애"), (4, "[i]", "이"),
+            (5, "[ɔ]", "오"), (6, "[u]", "우"), (7, "[ə]", "어"), (8, "[ʌ]", "어(강함)"),
+            (9, "[a:]", "아:"), (10, "[i:]", "이:"), (11, "[ɔ:]", "오:"), (12, "[u:]", "우:"),
+            (13, "[ə:]", "어:"), (14, "[ai]", "아이"), (15, "[ei]", "에이"), (16, "[au]", "아우"),
+            (17, "[ɔi]", "오이"), (18, "[ou]", "오우"), (19, "[iə]", "이어"), (20, "[eə]", "에어"),
+            (21, "[uə]", "우어"), (22, "[p]", "프"), (23, "[b]", "브"), (24, "[t]", "트"),
+            (25, "[d]", "드"), (26, "[k]", "크"), (27, "[g]", "그"), (28, "[f]", "프"),
+            (29, "[v]", "브"), (30, "[θ]", "쓰(번데기)"), (31, "[ð]", "드(돼지꼬리)"), (32, "[s]", "스"),
+            (33, "[z]", "즈"), (34, "[ʃ]", "쉬"), (35, "[ʒ]", "쥐"), (36, "[tʃ]", "취"),
+            (37, "[dʒ]", "쥬(쥐)"), (38, "[h]", "흐"), (39, "[r]", "ㄹ(굴림)"), (40, "[m]", "ㅁ"),
+            (41, "[n]", "ㄴ"), (42, "[ŋ]", "응"), (43, "[l]", "ㄹ(닿음)"), (44, "[j]", "이(반모음)"),
+            (45, "[w]", "우(반모음)"), (46, "[wa]", "와"), (47, "[wɔ]", "워"), (48, "[ju]", "유"),
+            (49, "[dʒa]", "쟈"), (50, "[tʃa]", "챠")
+        ]
+
+        # 모바일에서도 보기 좋게 한 줄에 2개씩 배치 (원하면 숫자를 바꿀 수 있습니다)
+        cols = st.columns(2) 
+        for i, (num, sym, kor) in enumerate(phonetics_data):
+            with cols[i % 2]:
+                st.markdown(f"**{num}. {sym}** `{kor}`")
+                img_path = f"images/{num}.png"
+                if os.path.exists(img_path):
+                    st.image(img_path, use_container_width=True)
+                else:
+                    st.info("📷 이미지 없음")
+                st.write("---") # 항목 구분선
+        
         st.subheader("🧩 영어의 8품사")
         st.markdown("""
         단어들을 역할과 기능에 따라 8가지로 분류한 '재료'입니다.
@@ -257,6 +249,7 @@ elif menu == "📚 영어 기초 가이드":
 
     with tab2:
         st.subheader("🔄 동사 변화표 (불규칙 위주)")
+        st.markdown('<div style="overflow-x: auto;">', unsafe_allow_html=True)
         st.markdown("""
         영어의 일반동사는 과거형과 완료/수동태에 쓰이는 과거분사(p.p) 형태로 변신합니다. 대부분은 `-ed`만 붙이면 되지만, 아래 불규칙 동사는 외워야 합니다.
 
@@ -265,7 +258,7 @@ elif menu == "📚 영어 기초 가이드":
         |---|---|---|---|
         | put | put | put | 놓다 |
         | cut | cut | cut | 자르다 |
-        | read | read(발음:레드) | read(발음:레드) | 읽다 |
+        | read | read(레드) | read(레드) | 읽다 |
 
         **② A - B - A 형 (현재와 p.p가 같음)**
         | 현재(V) | 과거(V-ed) | 과거분사(p.p) | 뜻 |
@@ -300,6 +293,7 @@ elif menu == "📚 영어 기초 가이드":
         | take | took | taken | 가져가다 |
         | write | wrote | written | 쓰다 |
         """)
+        st.markdown('</div>', unsafe_allow_html=True)
 
     with tab3:
         st.subheader("🌱 기초 구문 (명사, 대명사, 전치사)")
@@ -307,7 +301,6 @@ elif menu == "📚 영어 기초 가이드":
         **■ 1. 가산명사 vs 불가산명사**
         * **가산명사 (셀 수 있음)**: 하나면 앞에 `a/an`, 여러 개면 뒤에 `-s`를 붙입니다. (예: `an apple`, `apples`)
         * **불가산명사 (셀 수 없음)**: 액체나 덩어리, 안보이는 개념. `a`나 `-s`를 붙일 수 없습니다. (예: `water`, `information`, `money`)
-            * *I need an information (X)* ➔ *I need some information (O)*
 
         **■ 2. 만능 단어 'it'의 3가지 쓰임**
         * **지시대명사**: 앞서 말한 그것. "Where is my book? **It** is on the desk."
@@ -330,19 +323,16 @@ elif menu == "📚 영어 기초 가이드":
         st.markdown("""
         **■ 1. 문장의 5형식 (자리가 뜻을 결정한다!)**
         * **1형식 (S+V)**: I run.
-        * **2형식 (S+V+C)**: I am a student. (주어 보충)
-        * **3형식 (S+V+O)**: I love you. (~를 사랑해)
-        * **4형식 (S+V+O1+O2)**: I gave him a book. (~에게 ~를 주다)
-        * **5형식 (S+V+O+C)**: I made him happy. (~를 ~하게 만들다)
-            * *💡 5형식에 happily(부사)를 쓰면 안 되는 이유:* 부사는 동사를 꾸미지만, 여기선 명사(him)의 상태를 설명해야 하므로 형용사(happy)를 써야 함.
+        * **2형식 (S+V+C)**: I am a student.
+        * **3형식 (S+V+O)**: I love you.
+        * **4형식 (S+V+O1+O2)**: I gave him a book.
+        * **5형식 (S+V+O+C)**: I made him happy.
 
         **■ 2. 시제 (Tense) 완벽 이해**
         * **현재시제**: 지금이 아니라 '늘상 하는 습관/팩트'. "I go to school."
         * **진행형(be+ing)**: 지금 생생하게 하는 중. "I am eating."
         * **현재완료 (have+p.p)**: 과거의 일이 '현재'까지 영향을 미칠 때. 
-            * *과거형*: I lost my key. (지금은 찾았는지 모름)
             * *현재완료*: I **have lost** my key. (과거에 잃어버려서 ➔ 지금 내 손에 없다!)
-        * **현재완료진행 (have been ing)**: 쉼없이 계속하는 중. "I have been studying for 3 hours."
 
         **■ 3. 조동사 (추측/의무/used to)**
         * **추측**: must (99% 확신), may (50%), cannot (~일 리 없다)
@@ -364,14 +354,13 @@ elif menu == "📚 영어 기초 가이드":
 
         **■ 3. 관계대명사 (who, which, that)**
         문장을 두 번 말하기 귀찮을 때, 선행사(명사) 뒤에 접착제를 붙여 문장으로 길게 설명.
-        * "I saw the man **who** was running." (사람일 땐 who, 사물은 which, 만능은 that)
+        * "I saw the man **who** was running."
 
         **■ 4. 수동태 (be동사 + p.p)**
         주어가 행동을 '당할 때', 또는 행위자보다 당한 대상이 중요할 때 사용.
-        * "My car **was stolen**." (내 차 도난당했어 - 누가 훔쳤는진 모름)
+        * "My car **was stolen**."
 
         **■ 5. 간접의문문**
         의문문이 다른 문장 속으로 쏙 들어갈 때. 진짜 질문이 아니므로 어순이 평서문으로 바뀜.
-        * 직접: Who is he? (의문사+동사+주어)
         * 간접: I don't know **who he is**. (의문사+주어+동사)
         """)
