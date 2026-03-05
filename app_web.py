@@ -17,7 +17,11 @@ GEMINI_API_KEY = "AIzaSyASvCj6a-dLCWB8ldbt5mqVEu1FtqUOEEs"
 genai.configure(api_key=GEMINI_API_KEY)
 # ==========================================
 
-# ----------------- 🛠️ 핵심 함수 정의 (최적화) -----------------
+# ⭐️ [수정] 파일 저장 경로 변수 (이 부분이 빠져서 에러가 발생했었습니다!)
+VOCAB_FILE = 'my_vocab_web.csv'
+WRONG_FILE = 'my_vocab_wrong_web.csv'
+
+# ----------------- 🛠️ 핵심 함수 정의 -----------------
 def get_ai_response(prompt):
     try:
         available_models = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
@@ -49,7 +53,6 @@ def load_data(file_path):
 def save_data(df, file_path):
     df.to_csv(file_path, index=False, encoding='utf-8-sig')
 
-# ⭐️ [코드 최적화] 중복되던 단어 파싱/저장 로직을 하나의 함수로 통합
 def parse_and_add_words(response_text, df, category, level):
     lines = response_text.strip().split('\n')
     new_rows = []
@@ -138,24 +141,23 @@ menu = st.sidebar.selectbox("메뉴 선택", [
 st.sidebar.divider()
 st.sidebar.markdown("### 🛠️ 시스템 관리")
 
-# ⭐️ [추가] 완료 알림 처리 로직
 if st.session_state.get('show_reset_success'):
     st.toast("✅ 캐시 및 오류가 완벽하게 초기화되었습니다!", icon="🧹")
     st.sidebar.success("✅ 초기화 완료!")
-    st.session_state.show_reset_success = False # 알림 표시 후 플래그 초기화
+    st.session_state.show_reset_success = False
 
 if st.sidebar.button("🧹 시스템 캐시 및 오류 초기화"):
     st.cache_data.clear()
     st.cache_resource.clear()
     for key in list(st.session_state.keys()):
         del st.session_state[key]
-    st.session_state.show_reset_success = True # 새로고침 후 알림을 띄우기 위한 플래그
+    st.session_state.show_reset_success = True
     st.rerun()
 
 df = load_data(VOCAB_FILE)
 wrong_df = load_data(WRONG_FILE)
 
-# ⭐️ [코드 최적화] AI 프롬프트 공통 규칙 분리
+# ⭐️ 공통 AI 프롬프트 규칙
 AI_PROMPT_RULES = """
 [초강력 중요 규칙]
 1. 번호나 리스트 표시 절대 금지. 줄바꿈 없이 한 단어당 한 줄로만 작성.
@@ -384,7 +386,6 @@ elif menu == "📚 영어 기초 가이드":
     with tab1:
         st.subheader("🗣️ 영어 발음 기호표 (IPA 표준)")
         st.write("AI가 생성하는 국제표준 발음기호(IPA)와 완벽하게 연동된 표입니다.")
-        # ⭐️ [업데이트] AI가 생성하는 실제 IPA 표준 기호와 예시 단어로 전면 교체
         headers = ["발음기호", "소리(한글)", "예시단어", "발음기호", "소리(한글)", "예시단어"]
         data = [
             ["[iː]", "이- (길게)", "see", "[ɪ]", "이 (짧게)", "sit"],
