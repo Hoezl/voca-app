@@ -17,7 +17,6 @@ GEMINI_API_KEY = "AIzaSyCVaPlkdAnnovUBMaRddRHGoTpx3dQxDZk"
 genai.configure(api_key=GEMINI_API_KEY)
 # ==========================================
 
-# 💡 [핵심 업데이트] 할당량 초과 방어를 위한 지능형 모델 우회 시스템
 def get_ai_response(prompt):
     try:
         available_models = []
@@ -31,30 +30,20 @@ def get_ai_response(prompt):
     if not available_models:
         raise Exception("사용 가능한 AI 모델이 없습니다. API 키를 다시 확인해주세요.")
 
-    # 1. 무료 할당량이 아주 넉넉한(하루 1500번 이상) 모델을 1순위로 정렬
     priority_models = []
-    
-    # 1순위: lite가 붙은 가장 가벼운 최신/구형 모델들
     for m in available_models:
         if 'lite' in m.lower() and m not in priority_models:
             priority_models.append(m)
-            
-    # 2순위: 1.5버전 flash 모델들 (안정성 최고)
     for m in available_models:
         if '1.5-flash' in m.lower() and m not in priority_models:
             priority_models.append(m)
-
-    # 3순위: 나머지 flash 계열
     for m in available_models:
         if 'flash' in m.lower() and m not in priority_models:
             priority_models.append(m)
-
-    # 4순위: 그 외 모든 모델
     for m in available_models:
         if m not in priority_models:
             priority_models.append(m)
 
-    # 2. 우선순위대로 하나씩 찔러보고, 한도 초과(429)가 나면 조용히 다음 모델로 갈아탑니다!
     last_error = None
     for target_model in priority_models:
         try:
@@ -62,10 +51,8 @@ def get_ai_response(prompt):
             return model.generate_content(prompt)
         except Exception as e:
             last_error = str(e)
-            # 에러가 발생해도 중단하지 않고 다음 모델로 무조건 넘어감
             continue
 
-    # 리스트에 있는 수십 개의 모델이 전부 다 한도 초과로 터졌을 때만 오류를 띄웁니다.
     raise Exception(f"사용 가능한 모든 AI 서버의 일일 할당량이 초과되었습니다.\n마지막 에러: {last_error}")
 
 VOCAB_FILE = 'my_vocab_web.csv'
@@ -152,7 +139,6 @@ def render_mobile_table(headers, data):
 st.set_page_config(page_title="AI 영단어 마스터", layout="centered")
 st.title("🦉 AI 영단어 마스터 Web")
 
-# ----------------- 좌측 사이드바 & ⭐️ 시스템 초기화 버튼 -----------------
 st.sidebar.title("메뉴")
 menu = st.sidebar.selectbox("메뉴 선택", [
     "🤖 AI 단어 생성", 
@@ -177,7 +163,6 @@ if st.sidebar.button("🧹 시스템 캐시 및 오류 초기화"):
     time.sleep(1)
     st.rerun()
 
-# 데이터 로드
 df = load_data(VOCAB_FILE)
 wrong_df = load_data(WRONG_FILE)
 
@@ -190,6 +175,7 @@ if menu == "🤖 AI 단어 생성":
 
     if st.button("🚀 단어 생성 시작"):
         existing_words = ", ".join(df['Word'].tolist())
+        # ⭐️ 프롬프트 대폭 강화: 다품사/다의어 완벽 분리 지시
         prompt = f"""
         당신은 1타 영어 강사입니다.
         분야: {category} / 난이도: {level} / {count}개 생성.
@@ -198,10 +184,13 @@ if menu == "🤖 AI 단어 생성":
         1. 번호나 리스트 표시 절대 금지.
         2. 영단어에 절대 ** 기호 금지.
         3. 발음 기호 폰트 깨짐 방지: 강세(ˈ, ˌ) 완전 생략, 장음(ː)은 일반 콜론(:) 사용.
-        4. 품사와 뜻 통합: 단어가 여러 품사와 뜻을 가질 경우 쉼표(,)나 슬래시(/)로 모두 작성 (예: 명사: 물, 동사: 물을 주다)
-        [형식]: 영단어;[발음기호];품사 : 뜻;실전 예문
+        4. 다의어 및 다품사 완벽 정리: 하나의 단어가 가진 '모든 주요 품사'와 '여러 뜻'을 무조건 찾아서 상세히 기재할 것!
+           - 같은 품사 안에서 뜻이 여러 개면 쉼표(,)로 구분
+           - 품사가 달라지면 슬래시(/)로 구분
+           - 작성 예시: 명사 : 학급, 수업 / 동사 : 분류하다 / 형용사 : 일류의
+        [형식]: 영단어;[발음기호];품사별 상세 뜻;실전 예문 (예문은 단어당 1개만)
         """
-        with st.spinner("AI가 최적의 서버를 찾아 단어를 생성 중입니다... (잠시만 기다려주세요)"):
+        with st.spinner("AI가 상세한 뜻을 가진 단어를 생성 중입니다..."):
             try:
                 response = get_ai_response(prompt)
                 lines = response.text.strip().split('\n')
@@ -219,7 +208,7 @@ if menu == "🤖 AI 단어 생성":
                     new_df = pd.DataFrame(new_rows)
                     df = pd.concat([df, new_df], ignore_index=True).drop_duplicates('Word')
                     save_data(df, VOCAB_FILE)
-                    st.success(f"🎉 {len(new_rows)}개의 단어가 추가되었습니다!")
+                    st.success(f"🎉 {len(new_rows)}개의 단어가 상세 뜻과 함께 추가되었습니다!")
             except Exception as e:
                 st.error(f"❌ 생성 오류:\n{e}")
 
@@ -229,8 +218,18 @@ elif menu == "✨ 단어 일괄 추가":
     words_input = st.text_area("단어를 쉼표(,)로 구분해 입력하세요.")
     if st.button("✅ 분석 및 추가"):
         if words_input:
-            prompt = f"단어: {words_input}\n[형식]: 영단어;[발음기호];품사 : 뜻;실전 예문 (강세기호 생략, 번호 금지)"
-            with st.spinner("AI가 최적의 서버를 찾아 분석 중입니다..."):
+            # ⭐️ 수동 추가 시에도 똑같이 다품사/다의어 정리 지시
+            prompt = f"""
+            단어: {words_input}
+            [초강력 중요 규칙]
+            1. 번호나 리스트 표시 절대 금지.
+            2. 영단어에 절대 ** 기호 금지.
+            3. 발음 기호 폰트 깨짐 방지: 강세(ˈ, ˌ) 완전 생략, 장음(ː)은 일반 콜론(:) 사용.
+            4. 다의어 및 다품사 완벽 정리: 해당 단어가 가진 모든 주요 품사와 여러 뜻을 상세히 기재.
+               - 같은 품사 뜻은 쉼표(,)로, 다른 품사는 슬래시(/)로 구분 (예: 명사 : 아래층 / 부사 : 아래층으로)
+            [형식]: 영단어;[발음기호];품사별 상세 뜻;실전 예문
+            """
+            with st.spinner("AI가 입력하신 단어의 다중 품사를 스캔 중입니다..."):
                 try:
                     response = get_ai_response(prompt)
                     lines = response.text.strip().split('\n')
@@ -248,7 +247,7 @@ elif menu == "✨ 단어 일괄 추가":
                         new_df = pd.DataFrame(new_rows)
                         df = pd.concat([df, new_df], ignore_index=True).drop_duplicates('Word')
                         save_data(df, VOCAB_FILE)
-                        st.success("추가 완료!")
+                        st.success("상세 품사 분석 및 추가 완료!")
                 except Exception as e:
                     st.error(f"❌ 오류:\n{e}")
 
