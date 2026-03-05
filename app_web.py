@@ -12,22 +12,28 @@ from datetime import datetime
 import streamlit.components.v1 as components
 
 # ==========================================
-# 🔑 제미나이 API 키 설정
+# 🔑 제미나이 API 키 설정 (새로 발급받은 키를 넣어주세요!)
 GEMINI_API_KEY = "AIzaSyCq5nzWS9rHeEuwP0vsQ-wx9nZHZ5kij-A"
 genai.configure(api_key=GEMINI_API_KEY)
 # ==========================================
 
+# 💡 [버그 완벽 수정] 실패 원인을 정확하게 추적하는 AI 탐지기
 def get_ai_response(prompt):
-    models_to_try = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-flash-8b', 'gemini-pro']
-    last_error = None
+    # 단종된 모델을 제외하고 가장 빠르고 확실한 1.5 모델만 배치
+    models_to_try = ['gemini-1.5-flash', 'gemini-1.5-flash-8b']
+    error_logs = []
+    
     for model_name in models_to_try:
         try:
             target_model = genai.GenerativeModel(model_name)
             return target_model.generate_content(prompt)
         except Exception as e:
-            last_error = e
+            error_logs.append(f"[{model_name} 실패]: {str(e)}")
             continue 
-    raise Exception(f"모든 AI 모델 접근 실패. (마지막 에러: {last_error})")
+            
+    # 모든 모델이 실패하면 진짜 원인(할당량 초과인지, 키 오류인지)을 화면에 띄움
+    full_error_msg = "\n".join(error_logs)
+    raise Exception(f"AI 서버 접근 실패. 상세 원인을 확인해주세요:\n{full_error_msg}")
 
 VOCAB_FILE = 'my_vocab_web.csv'
 WRONG_FILE = 'my_vocab_wrong_web.csv'
@@ -167,7 +173,7 @@ if menu == "🤖 AI 단어 생성":
                     save_data(df, VOCAB_FILE)
                     st.success(f"🎉 {len(new_rows)}개의 단어가 추가되었습니다!")
             except Exception as e:
-                st.error(f"❌ 생성 오류: {e}")
+                st.error(f"❌ 생성 오류:\n{e}")
 
 # ----------------- ✨ 수동 일괄 추가 -----------------
 elif menu == "✨ 단어 일괄 추가":
@@ -196,7 +202,7 @@ elif menu == "✨ 단어 일괄 추가":
                         save_data(df, VOCAB_FILE)
                         st.success("추가 완료!")
                 except Exception as e:
-                    st.error(f"❌ 오류: {e}")
+                    st.error(f"❌ 오류:\n{e}")
 
 # ----------------- 📖 단어 관리 / 학습 기록 -----------------
 elif menu in ["📖 단어 관리", "📅 학습 기록"]:
@@ -238,7 +244,7 @@ elif menu in ["📖 단어 관리", "📅 학습 기록"]:
                 st.markdown(f"📝 **예문:** {row['Example'].replace(row['Word'], f'**:green[{row['Word']}]**')}")
                 
                 c1, c2, c3 = st.columns(3)
-                if c1.button("🔊 듣기", key=f"btn_listen_{idx}"):
+                if c1.button("🔊 듣기", key=f"btn_listen_{idx}_{time.time()}"):
                     speak(row['Word']) 
                     
                 if menu == "📖 단어 관리":
@@ -269,7 +275,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
         else:
             st.warning("학습 중인 단어가 없습니다.")
     else:
-        # 문제 목록 큐(Queue) 생성
         if 'test_menu' not in st.session_state or st.session_state.test_menu != menu:
             st.session_state.test_menu = menu
             st.session_state.prev_result = None
@@ -282,7 +287,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
             if 'current_test_mode' in st.session_state:
                 del st.session_state.current_test_mode
 
-        # 방금 푼 문제 결과 피드백
         if st.session_state.prev_result:
             res = st.session_state.prev_result
             if res['correct']:
@@ -297,11 +301,9 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
 
         st.divider()
 
-        # 문제가 다 끝났을 때
         if not st.session_state.test_queue:
             st.success("🎉 준비된 모든 단어의 테스트가 끝났습니다! 정말 고생하셨습니다.")
             if st.button("🔄 처음부터 다시 풀기"):
-                # 오답노트에서 재시작 버튼 누를 시 데이터 갱신
                 refresh_pool = wrong_df if is_wrong_mode else df[df['Status'] == 'Learning']
                 if not refresh_pool.empty:
                     queue = refresh_pool['Word'].tolist()
@@ -314,7 +316,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                 else:
                     st.success("더 이상 풀 문제가 없습니다!")
         else:
-            # 모드 고정
             if 'current_test_mode' not in st.session_state:
                 st.session_state.current_test_mode = random.choice(['E2K', 'K2E'])
             test_mode = st.session_state.current_test_mode
@@ -334,7 +335,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                 ans = st.text_input("✍️ 정답을 입력하고 엔터(Enter)를 누르세요.")
                 submitted = st.form_submit_button("제출")
                 
-                # 자동 포커스
                 components.html(
                     """
                     <script>
@@ -362,14 +362,11 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                         if clean_ans == clean_word:
                             correct = True
 
-                    # ⭐️ 3. 오답노트 동기화의 핵심 로직!
                     if correct:
-                        # 정답을 맞추면 실전 테스트든 오답 노트든 상관없이 무조건 오답 노트에서 완전 삭제!
                         if word_info['Word'] in wrong_df['Word'].values:
                             wrong_df = wrong_df[wrong_df['Word'] != word_info['Word']]
                             save_data(wrong_df, WRONG_FILE)
                     else:
-                        # 틀리면 무조건 오답 노트에 추가
                         if word_info['Word'] not in wrong_df['Word'].values:
                             new_wrong = pd.DataFrame([word_info.to_dict()])
                             wrong_df = pd.concat([wrong_df, new_wrong], ignore_index=True)
@@ -441,7 +438,6 @@ elif menu == "📚 영어 기초 가이드":
 
     with tab2:
         st.subheader("🔄 핵심 필수 동사표 (100+ 총망라)")
-        st.write("영어의 모든 동사(수만 개)를 담으면 사이트가 느려집니다. 대신, 원어민이 평생 쓰는 **핵심 필수 동사 100여 개**를 패턴별로 빈틈없이 모아두었습니다!")
         
         st.markdown("### 1. 규칙 동사 모음 (Regular Verbs)")
         headers_reg = ["규칙 패턴", "현재(V)", "과거(V-ed)", "과거분사(p.p)", "뜻"]
@@ -631,4 +627,3 @@ elif menu == "📚 영어 기초 가이드":
         의문문이 다른 문장 속으로 쏙 들어갈 때. 진짜 질문이 아니므로 어순이 평서문으로 바뀜.
         * 간접: I don't know **who he is**. (의문사+주어+동사)
         """)
-
