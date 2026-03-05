@@ -175,7 +175,7 @@ if menu == "🤖 AI 단어 생성":
 
     if st.button("🚀 단어 생성 시작"):
         existing_words = ", ".join(df['Word'].tolist())
-        # ⭐️ 프롬프트 대폭 강화: 다품사/다의어 완벽 분리 지시
+        # ⭐️ 규칙 3번에 발음 기호 대괄호 강제 지시 추가
         prompt = f"""
         당신은 1타 영어 강사입니다.
         분야: {category} / 난이도: {level} / {count}개 생성.
@@ -183,11 +183,8 @@ if menu == "🤖 AI 단어 생성":
         [초강력 중요 규칙]
         1. 번호나 리스트 표시 절대 금지.
         2. 영단어에 절대 ** 기호 금지.
-        3. 발음 기호 폰트 깨짐 방지: 강세(ˈ, ˌ) 완전 생략, 장음(ː)은 일반 콜론(:) 사용.
-        4. 다의어 및 다품사 완벽 정리: 하나의 단어가 가진 '모든 주요 품사'와 '여러 뜻'을 무조건 찾아서 상세히 기재할 것!
-           - 같은 품사 안에서 뜻이 여러 개면 쉼표(,)로 구분
-           - 품사가 달라지면 슬래시(/)로 구분
-           - 작성 예시: 명사 : 학급, 수업 / 동사 : 분류하다 / 형용사 : 일류의
+        3. 발음 기호 규칙: 강세(ˈ, ˌ) 완전 생략, 장음(ː)은 일반 콜론(:) 사용. 반드시 대괄호 `[]`로 양옆을 감쌀 것! (예: [klɑ:s])
+        4. 품사와 뜻 통합: 단어가 여러 품사와 뜻을 가질 경우 쉼표(,)나 슬래시(/)로 모두 작성 (예: 명사 : 학급, 수업 / 동사 : 분류하다)
         [형식]: 영단어;[발음기호];품사별 상세 뜻;실전 예문 (예문은 단어당 1개만)
         """
         with st.spinner("AI가 상세한 뜻을 가진 단어를 생성 중입니다..."):
@@ -199,8 +196,17 @@ if menu == "🤖 AI 단어 생성":
                     parts = line.split(';')
                     if len(parts) >= 4:
                         eng = re.sub(r'^[\d\.\)]+\s*', '', parts[0].replace('*', '').strip())
+                        
+                        # ⭐️ AI가 빼먹어도 무조건 대괄호 씌워주는 안전장치
+                        phonetic = parts[1].strip()
+                        if phonetic:
+                            if not phonetic.startswith('['): phonetic = '[' + phonetic
+                            if not phonetic.endswith(']'): phonetic = phonetic + ']'
+                        else:
+                            phonetic = '[]'
+
                         new_rows.append({
-                            'Word': eng, 'Phonetic': parts[1].strip(), 'Meaning': parts[2].strip(),
+                            'Word': eng, 'Phonetic': phonetic, 'Meaning': parts[2].strip(),
                             'Example': parts[3].strip(), 'Date': datetime.now().strftime("%Y-%m-%d"),
                             'Status': 'Learning', 'Category': category, 'Level': level
                         })
@@ -208,7 +214,7 @@ if menu == "🤖 AI 단어 생성":
                     new_df = pd.DataFrame(new_rows)
                     df = pd.concat([df, new_df], ignore_index=True).drop_duplicates('Word')
                     save_data(df, VOCAB_FILE)
-                    st.success(f"🎉 {len(new_rows)}개의 단어가 상세 뜻과 함께 추가되었습니다!")
+                    st.success(f"🎉 {len(new_rows)}개의 단어가 깔끔하게 추가되었습니다!")
             except Exception as e:
                 st.error(f"❌ 생성 오류:\n{e}")
 
@@ -218,13 +224,13 @@ elif menu == "✨ 단어 일괄 추가":
     words_input = st.text_area("단어를 쉼표(,)로 구분해 입력하세요.")
     if st.button("✅ 분석 및 추가"):
         if words_input:
-            # ⭐️ 수동 추가 시에도 똑같이 다품사/다의어 정리 지시
+            # ⭐️ 수동 추가 시에도 대괄호 지시 추가
             prompt = f"""
             단어: {words_input}
             [초강력 중요 규칙]
             1. 번호나 리스트 표시 절대 금지.
             2. 영단어에 절대 ** 기호 금지.
-            3. 발음 기호 폰트 깨짐 방지: 강세(ˈ, ˌ) 완전 생략, 장음(ː)은 일반 콜론(:) 사용.
+            3. 발음 기호 규칙: 강세(ˈ, ˌ) 완전 생략, 장음(ː)은 일반 콜론(:) 사용. 반드시 대괄호 `[]`로 양옆을 감쌀 것! (예: [klɑ:s])
             4. 다의어 및 다품사 완벽 정리: 해당 단어가 가진 모든 주요 품사와 여러 뜻을 상세히 기재.
                - 같은 품사 뜻은 쉼표(,)로, 다른 품사는 슬래시(/)로 구분 (예: 명사 : 아래층 / 부사 : 아래층으로)
             [형식]: 영단어;[발음기호];품사별 상세 뜻;실전 예문
@@ -238,8 +244,17 @@ elif menu == "✨ 단어 일괄 추가":
                         parts = line.split(';')
                         if len(parts) >= 4:
                             eng = re.sub(r'^[\d\.\)]+\s*', '', parts[0].replace('*', '').strip())
+                            
+                            # ⭐️ 여기도 똑같이 안전장치 적용
+                            phonetic = parts[1].strip()
+                            if phonetic:
+                                if not phonetic.startswith('['): phonetic = '[' + phonetic
+                                if not phonetic.endswith(']'): phonetic = phonetic + ']'
+                            else:
+                                phonetic = '[]'
+
                             new_rows.append({
-                                'Word': eng, 'Phonetic': parts[1].strip(), 'Meaning': parts[2].strip(),
+                                'Word': eng, 'Phonetic': phonetic, 'Meaning': parts[2].strip(),
                                 'Example': parts[3].strip(), 'Date': datetime.now().strftime("%Y-%m-%d"),
                                 'Status': 'Learning', 'Category': '수동 추가', 'Level': '-'
                             })
