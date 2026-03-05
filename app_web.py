@@ -12,28 +12,51 @@ from datetime import datetime
 import streamlit.components.v1 as components
 
 # ==========================================
-# 🔑 제미나이 API 키 설정 (새로 발급받은 키를 넣어주세요!)
+# 🔑 제미나이 API 키 설정
 GEMINI_API_KEY = "AIzaSyCVaPlkdAnnovUBMaRddRHGoTpx3dQxDZk"
 genai.configure(api_key=GEMINI_API_KEY)
 # ==========================================
 
-# 💡 [버그 완벽 수정] 실패 원인을 정확하게 추적하는 AI 탐지기
+# 💡 [최종 무기] 내 API 키로 사용 가능한 모델 목록을 직접 가져와서 확실한 것만 씁니다!
 def get_ai_response(prompt):
-    # 단종된 모델을 제외하고 가장 빠르고 확실한 1.5 모델만 배치
-    models_to_try = ['gemini-1.5-flash', 'gemini-1.5-flash-8b']
-    error_logs = []
-    
-    for model_name in models_to_try:
-        try:
-            target_model = genai.GenerativeModel(model_name)
-            return target_model.generate_content(prompt)
-        except Exception as e:
-            error_logs.append(f"[{model_name} 실패]: {str(e)}")
-            continue 
+    try:
+        # 1. 내 API 키로 쓸 수 있는 모든 모델 목록 스캔
+        available_models = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                # 'models/' 글자 떼어내고 이름만 추출
+                model_name = m.name.replace('models/', '')
+                available_models.append(model_name)
+    except Exception as e:
+        raise Exception(f"API 키 연결 실패: {e}")
+
+    if not available_models:
+        raise Exception("사용 가능한 AI 모델이 없습니다. API 키를 다시 확인해주세요.")
+
+    # 2. 가장 안정적이고 할당량이 많은 '1.5-flash'를 1순위로 찾기
+    target_model = None
+    for name in available_models:
+        if '1.5-flash' in name and '8b' not in name and 'latest' not in name:
+            target_model = name
+            break
             
-    # 모든 모델이 실패하면 진짜 원인(할당량 초과인지, 키 오류인지)을 화면에 띄움
-    full_error_msg = "\n".join(error_logs)
-    raise Exception(f"AI 서버 접근 실패. 상세 원인을 확인해주세요:\n{full_error_msg}")
+    # 없으면 1.5-flash가 들어간 아무 모델이나 선택
+    if not target_model:
+        for name in available_models:
+            if '1.5-flash' in name:
+                target_model = name
+                break
+                
+    # 그래도 없으면 구글이 허락한 첫 번째 모델 무조건 사용
+    if not target_model:
+        target_model = available_models[0]
+
+    # 3. 찾은 모델로 단어 생성 시도
+    try:
+        model = genai.GenerativeModel(target_model)
+        return model.generate_content(prompt)
+    except Exception as e:
+        raise Exception(f"[{target_model} 생성 실패]: {e}\n(탐지된 사용 가능 모델: {', '.join(available_models)})")
 
 VOCAB_FILE = 'my_vocab_web.csv'
 WRONG_FILE = 'my_vocab_wrong_web.csv'
@@ -153,7 +176,7 @@ if menu == "🤖 AI 단어 생성":
         4. 품사와 뜻 통합: 단어가 여러 품사와 뜻을 가질 경우 쉼표(,)나 슬래시(/)로 모두 작성 (예: 명사: 물, 동사: 물을 주다)
         [형식]: 영단어;[발음기호];품사 : 뜻;실전 예문
         """
-        with st.spinner("AI가 단어를 생성 중입니다..."):
+        with st.spinner("AI가 최적의 모델을 스캔 중입니다..."):
             try:
                 response = get_ai_response(prompt)
                 lines = response.text.strip().split('\n')
@@ -173,7 +196,7 @@ if menu == "🤖 AI 단어 생성":
                     save_data(df, VOCAB_FILE)
                     st.success(f"🎉 {len(new_rows)}개의 단어가 추가되었습니다!")
             except Exception as e:
-                st.error(f"❌ 생성 오류:\n{e}")
+                st.error(f"❌ 생성 오류: {e}")
 
 # ----------------- ✨ 수동 일괄 추가 -----------------
 elif menu == "✨ 단어 일괄 추가":
@@ -202,7 +225,7 @@ elif menu == "✨ 단어 일괄 추가":
                         save_data(df, VOCAB_FILE)
                         st.success("추가 완료!")
                 except Exception as e:
-                    st.error(f"❌ 오류:\n{e}")
+                    st.error(f"❌ 오류: {e}")
 
 # ----------------- 📖 단어 관리 / 학습 기록 -----------------
 elif menu in ["📖 단어 관리", "📅 학습 기록"]:
@@ -627,4 +650,3 @@ elif menu == "📚 영어 기초 가이드":
         의문문이 다른 문장 속으로 쏙 들어갈 때. 진짜 질문이 아니므로 어순이 평서문으로 바뀜.
         * 간접: I don't know **who he is**. (의문사+주어+동사)
         """)
-
