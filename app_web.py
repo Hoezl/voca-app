@@ -17,14 +17,12 @@ GEMINI_API_KEY = "AIzaSyCVaPlkdAnnovUBMaRddRHGoTpx3dQxDZk"
 genai.configure(api_key=GEMINI_API_KEY)
 # ==========================================
 
-# 💡 [최종 무기] 내 API 키로 사용 가능한 모델 목록을 직접 가져와서 확실한 것만 씁니다!
+# 💡 [핵심 업데이트] 할당량 초과 방어를 위한 지능형 모델 우회 시스템
 def get_ai_response(prompt):
     try:
-        # 1. 내 API 키로 쓸 수 있는 모든 모델 목록 스캔
         available_models = []
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
-                # 'models/' 글자 떼어내고 이름만 추출
                 model_name = m.name.replace('models/', '')
                 available_models.append(model_name)
     except Exception as e:
@@ -33,30 +31,42 @@ def get_ai_response(prompt):
     if not available_models:
         raise Exception("사용 가능한 AI 모델이 없습니다. API 키를 다시 확인해주세요.")
 
-    # 2. 가장 안정적이고 할당량이 많은 '1.5-flash'를 1순위로 찾기
-    target_model = None
-    for name in available_models:
-        if '1.5-flash' in name and '8b' not in name and 'latest' not in name:
-            target_model = name
-            break
+    # 1. 무료 할당량이 아주 넉넉한(하루 1500번 이상) 모델을 1순위로 정렬
+    priority_models = []
+    
+    # 1순위: lite가 붙은 가장 가벼운 최신/구형 모델들
+    for m in available_models:
+        if 'lite' in m.lower() and m not in priority_models:
+            priority_models.append(m)
             
-    # 없으면 1.5-flash가 들어간 아무 모델이나 선택
-    if not target_model:
-        for name in available_models:
-            if '1.5-flash' in name:
-                target_model = name
-                break
-                
-    # 그래도 없으면 구글이 허락한 첫 번째 모델 무조건 사용
-    if not target_model:
-        target_model = available_models[0]
+    # 2순위: 1.5버전 flash 모델들 (안정성 최고)
+    for m in available_models:
+        if '1.5-flash' in m.lower() and m not in priority_models:
+            priority_models.append(m)
 
-    # 3. 찾은 모델로 단어 생성 시도
-    try:
-        model = genai.GenerativeModel(target_model)
-        return model.generate_content(prompt)
-    except Exception as e:
-        raise Exception(f"[{target_model} 생성 실패]: {e}\n(탐지된 사용 가능 모델: {', '.join(available_models)})")
+    # 3순위: 나머지 flash 계열
+    for m in available_models:
+        if 'flash' in m.lower() and m not in priority_models:
+            priority_models.append(m)
+
+    # 4순위: 그 외 모든 모델
+    for m in available_models:
+        if m not in priority_models:
+            priority_models.append(m)
+
+    # 2. 우선순위대로 하나씩 찔러보고, 한도 초과(429)가 나면 조용히 다음 모델로 갈아탑니다!
+    last_error = None
+    for target_model in priority_models:
+        try:
+            model = genai.GenerativeModel(target_model)
+            return model.generate_content(prompt)
+        except Exception as e:
+            last_error = str(e)
+            # 에러가 발생해도 중단하지 않고 다음 모델로 무조건 넘어감
+            continue
+
+    # 리스트에 있는 수십 개의 모델이 전부 다 한도 초과로 터졌을 때만 오류를 띄웁니다.
+    raise Exception(f"사용 가능한 모든 AI 서버의 일일 할당량이 초과되었습니다.\n마지막 에러: {last_error}")
 
 VOCAB_FILE = 'my_vocab_web.csv'
 WRONG_FILE = 'my_vocab_wrong_web.csv'
@@ -142,6 +152,8 @@ def render_mobile_table(headers, data):
 st.set_page_config(page_title="AI 영단어 마스터", layout="centered")
 st.title("🦉 AI 영단어 마스터 Web")
 
+# ----------------- 좌측 사이드바 & ⭐️ 시스템 초기화 버튼 -----------------
+st.sidebar.title("메뉴")
 menu = st.sidebar.selectbox("메뉴 선택", [
     "🤖 AI 단어 생성", 
     "📖 단어 관리", 
@@ -153,6 +165,19 @@ menu = st.sidebar.selectbox("메뉴 선택", [
     "🔥 오답 노트 재도전"
 ])
 
+st.sidebar.divider()
+st.sidebar.markdown("### 🛠️ 시스템 관리")
+if st.sidebar.button("🧹 시스템 캐시 및 오류 초기화"):
+    st.cache_data.clear()
+    st.cache_resource.clear()
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    
+    st.sidebar.success("✅ 캐시 삭제 완료! 앱을 재시작합니다.")
+    time.sleep(1)
+    st.rerun()
+
+# 데이터 로드
 df = load_data(VOCAB_FILE)
 wrong_df = load_data(WRONG_FILE)
 
@@ -176,7 +201,7 @@ if menu == "🤖 AI 단어 생성":
         4. 품사와 뜻 통합: 단어가 여러 품사와 뜻을 가질 경우 쉼표(,)나 슬래시(/)로 모두 작성 (예: 명사: 물, 동사: 물을 주다)
         [형식]: 영단어;[발음기호];품사 : 뜻;실전 예문
         """
-        with st.spinner("AI가 최적의 모델을 스캔 중입니다..."):
+        with st.spinner("AI가 최적의 서버를 찾아 단어를 생성 중입니다... (잠시만 기다려주세요)"):
             try:
                 response = get_ai_response(prompt)
                 lines = response.text.strip().split('\n')
@@ -196,7 +221,7 @@ if menu == "🤖 AI 단어 생성":
                     save_data(df, VOCAB_FILE)
                     st.success(f"🎉 {len(new_rows)}개의 단어가 추가되었습니다!")
             except Exception as e:
-                st.error(f"❌ 생성 오류: {e}")
+                st.error(f"❌ 생성 오류:\n{e}")
 
 # ----------------- ✨ 수동 일괄 추가 -----------------
 elif menu == "✨ 단어 일괄 추가":
@@ -205,7 +230,7 @@ elif menu == "✨ 단어 일괄 추가":
     if st.button("✅ 분석 및 추가"):
         if words_input:
             prompt = f"단어: {words_input}\n[형식]: 영단어;[발음기호];품사 : 뜻;실전 예문 (강세기호 생략, 번호 금지)"
-            with st.spinner("분석 중..."):
+            with st.spinner("AI가 최적의 서버를 찾아 분석 중입니다..."):
                 try:
                     response = get_ai_response(prompt)
                     lines = response.text.strip().split('\n')
@@ -225,7 +250,7 @@ elif menu == "✨ 단어 일괄 추가":
                         save_data(df, VOCAB_FILE)
                         st.success("추가 완료!")
                 except Exception as e:
-                    st.error(f"❌ 오류: {e}")
+                    st.error(f"❌ 오류:\n{e}")
 
 # ----------------- 📖 단어 관리 / 학습 기록 -----------------
 elif menu in ["📖 단어 관리", "📅 학습 기록"]:
