@@ -13,7 +13,7 @@ import streamlit.components.v1 as components
 
 # ==========================================
 # 🔑 제미나이 API 키 설정
-GEMINI_API_KEY = "AIzaSyDkkGaVQAz66GB94QCd9vuYQZEddfCJvl0"
+GEMINI_API_KEY = "AIzaSyCq5nzWS9rHeEuwP0vsQ-wx9nZHZ5kij-A"
 genai.configure(api_key=GEMINI_API_KEY)
 # ==========================================
 
@@ -631,3 +631,4 @@ elif menu == "📚 영어 기초 가이드":
         의문문이 다른 문장 속으로 쏙 들어갈 때. 진짜 질문이 아니므로 어순이 평서문으로 바뀜.
         * 간접: I don't know **who he is**. (의문사+주어+동사)
         """)
+
