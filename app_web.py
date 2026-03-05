@@ -17,7 +17,6 @@ GEMINI_API_KEY = "AIzaSyASvCj6a-dLCWB8ldbt5mqVEu1FtqUOEEs"
 genai.configure(api_key=GEMINI_API_KEY)
 # ==========================================
 
-# ⭐️ [수정] 파일 저장 경로 변수 (이 부분이 빠져서 에러가 발생했었습니다!)
 VOCAB_FILE = 'my_vocab_web.csv'
 WRONG_FILE = 'my_vocab_wrong_web.csv'
 
@@ -60,13 +59,14 @@ def parse_and_add_words(response_text, df, category, level):
         parts = line.split(';')
         if len(parts) >= 4:
             eng = re.sub(r'^[\d\.\)]+\s*', '', parts[0].replace('*', '').strip())
+            
+            # ⭐️ [핵심 수정] 괄호 안쪽에 무조건 공백을 넣어서 [ iː ] 형태로 명확하게 만들기
             phonetic = parts[1].strip()
-            # 안전장치: 괄호 강제 씌우기
             if phonetic:
-                if not phonetic.startswith('['): phonetic = '[' + phonetic
-                if not phonetic.endswith(']'): phonetic = phonetic + ']'
+                phonetic = phonetic.replace('[', '').replace(']', '').strip()
+                phonetic = f"[ {phonetic} ]"
             else:
-                phonetic = '[]'
+                phonetic = '[   ]'
 
             new_rows.append({
                 'Word': eng, 'Phonetic': phonetic, 'Meaning': parts[2].strip(),
@@ -121,8 +121,9 @@ def play_sequence_audio(words):
     """
     components.html(html_code, height=0, width=0)
 
-def render_mobile_table(headers, data):
-    html = '<div style="overflow-x: auto;"><table style="width: 100%; border-collapse: collapse; font-size: 14px;">'
+# ⭐️ [코드 최적화] 테이블 폰트 크기를 개별 조절할 수 있도록 파라미터(font_size) 추가
+def render_mobile_table(headers, data, font_size="14px"):
+    html = f'<div style="overflow-x: auto;"><table style="width: 100%; border-collapse: collapse; font-size: {font_size};">'
     html += "<tr>" + "".join([f"<th style='border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #333; color: white;'>{h}</th>" for h in headers]) + "</tr>"
     for row in data: html += "<tr>" + "".join([f"<td style='border: 1px solid #ddd; padding: 8px;'>{cell}</td>" for cell in row]) + "</tr>"
     html += "</table></div>"
@@ -157,16 +158,16 @@ if st.sidebar.button("🧹 시스템 캐시 및 오류 초기화"):
 df = load_data(VOCAB_FILE)
 wrong_df = load_data(WRONG_FILE)
 
-# ⭐️ 공통 AI 프롬프트 규칙
+# ⭐️ 공통 AI 프롬프트 규칙 (발음 기호 띄어쓰기 지시 추가)
 AI_PROMPT_RULES = """
 [초강력 중요 규칙]
 1. 번호나 리스트 표시 절대 금지. 줄바꿈 없이 한 단어당 한 줄로만 작성.
 2. 영단어에 절대 ** 기호 금지.
-3. 발음 기호: 국제음성기호(IPA) 표준을 따르고 반드시 대괄호 `[]`로 감쌀 것! (예: [klɑːs])
+3. 발음 기호: 국제음성기호(IPA) 표준을 따르고 반드시 대괄호 양옆에 공백을 한 칸씩 넣을 것! (예: [ klɑːs ])
 4. 다품사 강제 & 핵심 요약(⭐️): 단어의 모든 주요 품사(명사, 동사, 형용사 등)를 찾되, 뜻은 품사별 1~2개만 간결하게 요약.
    - 같은 품사 내 뜻은 쉼표(,), 품사가 바뀌면 슬래시(/)로 구분
    - (예: 명사 : 아래층 / 부사 : 아래층으로)
-[형식]: 영단어;[발음기호];품사별 핵심 뜻;실전 예문 (예문은 1개만)
+[형식]: 영단어;[ 발음기호 ];품사별 핵심 뜻;실전 예문 (예문은 1개만)
 """
 
 # ----------------- 🤖 AI 단어 생성 -----------------
@@ -385,31 +386,34 @@ elif menu == "📚 영어 기초 가이드":
     
     with tab1:
         st.subheader("🗣️ 영어 발음 기호표 (IPA 표준)")
-        st.write("AI가 생성하는 국제표준 발음기호(IPA)와 완벽하게 연동된 표입니다.")
-        headers = ["발음기호", "소리(한글)", "예시단어", "발음기호", "소리(한글)", "예시단어"]
+        st.write("모음(Vowels)과 자음(Consonants)을 보기 쉽게 분류했습니다.")
+        
+        # ⭐️ [핵심 수정] 예시 단어 삭제, [ iː ] 형태 적용, 글자 크기 17px로 확대
+        headers = ["발음 기호", "소리 (한글)", "발음 기호", "소리 (한글)"]
         data = [
-            ["[iː]", "이- (길게)", "see", "[ɪ]", "이 (짧게)", "sit"],
-            ["[e] / [ɛ]", "에", "bed", "[æ]", "애 (입크게)", "cat"],
-            ["[ɑː]", "아- (길게)", "father", "[ɒ] / [ɔː]", "오- (길게)", "saw"],
-            ["[ʊ]", "우 (짧게)", "put", "[uː]", "우- (길게)", "too"],
-            ["[ʌ]", "어 (강하게)", "cup", "[ə]", "어 (약하게)", "about"],
-            ["[ɜː] / [əː]", "어- (길게)", "bird", "[eɪ]", "에이", "say"],
-            ["[aɪ]", "아이", "five", "[ɔɪ]", "오이", "boy"],
-            ["[aʊ]", "아우", "now", "[oʊ] / [əʊ]", "오우", "go"],
-            ["[p]", "프", "pen", "[b]", "브", "bad"],
-            ["[t]", "트", "tea", "[d]", "드", "did"],
-            ["[k]", "크", "cat", "[g]", "그", "got"],
-            ["[f]", "프(아랫입술)", "fall", "[v]", "브(아랫입술)", "van"],
-            ["[θ]", "쓰(번데기)", "thin", "[ð]", "드(돼지꼬리)", "this"],
-            ["[s]", "스", "so", "[z]", "즈", "zoo"],
-            ["[ʃ]", "쉬", "she", "[ʒ]", "쥐(부드럽게)", "vision"],
-            ["[h]", "흐", "how", "[tʃ]", "취", "chin"],
-            ["[dʒ]", "쥐/쥬", "jam", "[m]", "ㅁ/음", "man"],
-            ["[n]", "ㄴ/은", "no", "[ŋ]", "ㅇ/응", "sing"],
-            ["[l]", "ㄹ(혀끝 닿음)", "leg", "[r]", "ㄹ(혀 굴림)", "red"],
-            ["[j]", "이/야(반모음)", "yes", "[w]", "우/와(반모음)", "wet"]
+            ["[ iː ]", "이- (길게)", "[ ɪ ]", "이 (짧게)"],
+            ["[ e ] / [ ɛ ]", "에", "[ æ ]", "애 (입크게)"],
+            ["[ ɑː ]", "아- (길게)", "[ ɒ ] / [ ɔː ]", "오- (길게)"],
+            ["[ ʊ ]", "우 (짧게)", "[ uː ]", "우- (길게)"],
+            ["[ ʌ ]", "어 (강하게)", "[ ə ]", "어 (약하게)"],
+            ["[ ɜː ] / [ əː ]", "어- (길게)", "[ eɪ ]", "에이"],
+            ["[ aɪ ]", "아이", "[ ɔɪ ]", "오이"],
+            ["[ aʊ ]", "아우", "[ oʊ ] / [ əʊ ]", "오우"],
+            ["[ p ]", "프", "[ b ]", "브"],
+            ["[ t ]", "트", "[ d ]", "드"],
+            ["[ k ]", "크", "[ g ]", "그"],
+            ["[ f ]", "프 (아랫입술)", "[ v ]", "브 (아랫입술)"],
+            ["[ θ ]", "쓰 (번데기)", "[ ð ]", "드 (돼지꼬리)"],
+            ["[ s ]", "스", "[ z ]", "즈"],
+            ["[ ʃ ]", "쉬", "[ ʒ ]", "쥐 (부드럽게)"],
+            ["[ h ]", "흐", "[ tʃ ]", "취"],
+            ["[ dʒ ]", "쥐 / 쥬", "[ m ]", "ㅁ / 음"],
+            ["[ n ]", "ㄴ / 은", "[ ŋ ]", "ㅇ / 응"],
+            ["[ l ]", "ㄹ (혀끝 닿음)", "[ r ]", "ㄹ (혀 굴림)"],
+            ["[ j ]", "이 / 야 (반모음)", "[ w ]", "우 / 와 (반모음)"]
         ]
-        render_mobile_table(headers, data)
+        # 폰트 사이즈 17px (기존 대비 약 +3pt) 적용
+        render_mobile_table(headers, data, font_size="17px")
         
         st.divider()
         st.subheader("🧩 영어의 8품사")
