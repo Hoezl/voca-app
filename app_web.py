@@ -175,7 +175,6 @@ if menu == "🤖 AI 단어 생성":
 
     if st.button("🚀 단어 생성 시작"):
         existing_words = ", ".join(df['Word'].tolist())
-        # ⭐️ 규칙 3번에 발음 기호 대괄호 강제 지시 추가
         prompt = f"""
         당신은 1타 영어 강사입니다.
         분야: {category} / 난이도: {level} / {count}개 생성.
@@ -197,7 +196,6 @@ if menu == "🤖 AI 단어 생성":
                     if len(parts) >= 4:
                         eng = re.sub(r'^[\d\.\)]+\s*', '', parts[0].replace('*', '').strip())
                         
-                        # ⭐️ AI가 빼먹어도 무조건 대괄호 씌워주는 안전장치
                         phonetic = parts[1].strip()
                         if phonetic:
                             if not phonetic.startswith('['): phonetic = '[' + phonetic
@@ -224,7 +222,6 @@ elif menu == "✨ 단어 일괄 추가":
     words_input = st.text_area("단어를 쉼표(,)로 구분해 입력하세요.")
     if st.button("✅ 분석 및 추가"):
         if words_input:
-            # ⭐️ 수동 추가 시에도 대괄호 지시 추가
             prompt = f"""
             단어: {words_input}
             [초강력 중요 규칙]
@@ -245,7 +242,6 @@ elif menu == "✨ 단어 일괄 추가":
                         if len(parts) >= 4:
                             eng = re.sub(r'^[\d\.\)]+\s*', '', parts[0].replace('*', '').strip())
                             
-                            # ⭐️ 여기도 똑같이 안전장치 적용
                             phonetic = parts[1].strip()
                             if phonetic:
                                 if not phonetic.startswith('['): phonetic = '[' + phonetic
@@ -303,7 +299,14 @@ elif menu in ["📖 단어 관리", "📅 학습 기록"]:
         for idx, row in view_df.iterrows():
             with st.expander(f"**{row['Word']}** {row['Phonetic']} | {row['Meaning']}"):
                 st.write(f"📅 추가일: {row['Date']}")
-                st.markdown(f"📝 **예문:** {row['Example'].replace(row['Word'], f'**:green[{row['Word']}]**')}")
+                
+                # ⭐️ [핵심 수정] 여기서 발생하던 따옴표 문법 충돌 에러를 완벽하게 분리하여 해결!
+                word_str = str(row['Word'])
+                ex_str = str(row['Example'])
+                highlighted_word = f"**:green[{word_str}]**"
+                final_example = ex_str.replace(word_str, highlighted_word)
+                
+                st.markdown(f"📝 **예문:** {final_example}")
                 
                 c1, c2, c3 = st.columns(3)
                 if c1.button("🔊 듣기", key=f"btn_listen_{idx}_{time.time()}"):
@@ -689,5 +692,3 @@ elif menu == "📚 영어 기초 가이드":
         의문문이 다른 문장 속으로 쏙 들어갈 때. 진짜 질문이 아니므로 어순이 평서문으로 바뀜.
         * 간접: I don't know **who he is**. (의문사+주어+동사)
         """)
-
-
