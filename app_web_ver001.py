@@ -13,7 +13,7 @@ import streamlit.components.v1 as components
 
 # ==========================================
 # 🔑 제미나이 API 키 설정
-GEMINI_API_KEY = "AIzaSyASvCj6a-dLCWB8ldbt5mqVEu1FtqUOEEs"
+GEMINI_API_KEY = ""
 genai.configure(api_key=GEMINI_API_KEY)
 # ==========================================
 
