@@ -12,9 +12,14 @@ from datetime import datetime
 import streamlit.components.v1 as components
 
 # ==========================================
-# 🔑 제미나이 API 키 설정
-GEMINI_API_KEY = "AIzaSyASvCj6a-dLCWB8ldbt5mqVEu1FtqUOEEs"
-genai.configure(api_key=GEMINI_API_KEY)
+# 🔑 제미나이 API 키 설정 (보안 금고 연동 완벽 적용)
+try:
+    # 깃허브 코드가 아닌, 스트림릿의 비밀 금고(Secrets)에서 키를 몰래 꺼내옵니다.
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+    genai.configure(api_key=GEMINI_API_KEY)
+except Exception:
+    st.error("🚨 스트림릿 보안 금고(Secrets)에 API 키가 등록되지 않았습니다! 앱 관리자 설정에서 키를 먼저 등록해주세요.")
+    st.stop()
 # ==========================================
 
 VOCAB_FILE = 'my_vocab_web.csv'
@@ -60,7 +65,6 @@ def parse_and_add_words(response_text, df, category, level):
         if len(parts) >= 4:
             eng = re.sub(r'^[\d\.\)]+\s*', '', parts[0].replace('*', '').strip())
             
-            # ⭐️ [핵심 수정] 괄호 안쪽에 무조건 공백을 넣어서 [ iː ] 형태로 명확하게 만들기
             phonetic = parts[1].strip()
             if phonetic:
                 phonetic = phonetic.replace('[', '').replace(']', '').strip()
@@ -121,7 +125,6 @@ def play_sequence_audio(words):
     """
     components.html(html_code, height=0, width=0)
 
-# ⭐️ [코드 최적화] 테이블 폰트 크기를 개별 조절할 수 있도록 파라미터(font_size) 추가
 def render_mobile_table(headers, data, font_size="14px"):
     html = f'<div style="overflow-x: auto;"><table style="width: 100%; border-collapse: collapse; font-size: {font_size};">'
     html += "<tr>" + "".join([f"<th style='border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #333; color: white;'>{h}</th>" for h in headers]) + "</tr>"
@@ -158,7 +161,7 @@ if st.sidebar.button("🧹 시스템 캐시 및 오류 초기화"):
 df = load_data(VOCAB_FILE)
 wrong_df = load_data(WRONG_FILE)
 
-# ⭐️ 공통 AI 프롬프트 규칙 (발음 기호 띄어쓰기 지시 추가)
+# ⭐️ 공통 AI 프롬프트 규칙
 AI_PROMPT_RULES = """
 [초강력 중요 규칙]
 1. 번호나 리스트 표시 절대 금지. 줄바꿈 없이 한 단어당 한 줄로만 작성.
@@ -387,8 +390,6 @@ elif menu == "📚 영어 기초 가이드":
     with tab1:
         st.subheader("🗣️ 영어 발음 기호표 (IPA 표준)")
         st.write("모음(Vowels)과 자음(Consonants)을 보기 쉽게 분류했습니다.")
-        
-        # ⭐️ [핵심 수정] 예시 단어 삭제, [ iː ] 형태 적용, 글자 크기 17px로 확대
         headers = ["발음 기호", "소리 (한글)", "발음 기호", "소리 (한글)"]
         data = [
             ["[ iː ]", "이- (길게)", "[ ɪ ]", "이 (짧게)"],
@@ -412,7 +413,6 @@ elif menu == "📚 영어 기초 가이드":
             ["[ l ]", "ㄹ (혀끝 닿음)", "[ r ]", "ㄹ (혀 굴림)"],
             ["[ j ]", "이 / 야 (반모음)", "[ w ]", "우 / 와 (반모음)"]
         ]
-        # 폰트 사이즈 17px (기존 대비 약 +3pt) 적용
         render_mobile_table(headers, data, font_size="17px")
         
         st.divider()
