@@ -12,9 +12,8 @@ from datetime import datetime
 import streamlit.components.v1 as components
 
 # ==========================================
-# 🔑 제미나이 API 키 설정 (보안 금고 연동 완벽 적용)
+# 🔑 제미나이 API 키 설정 (보안 금고 연동)
 try:
-    # 깃허브 코드가 아닌, 스트림릿의 비밀 금고(Secrets)에서 키를 몰래 꺼내옵니다.
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=GEMINI_API_KEY)
 except Exception:
@@ -245,8 +244,9 @@ elif menu in ["📖 단어 관리", "📅 학습 기록"]:
 
         st.divider()
         
-        for idx, row in view_df.iterrows():
-            with st.expander(f"**{row['Word']}** {row['Phonetic']} | {row['Meaning']}"):
+        # ⭐️ [핵심 수정] 단어 목록 앞에 직관적인 순번(No.1, No.2...) 추가
+        for i, (idx, row) in enumerate(view_df.iterrows(), start=1):
+            with st.expander(f"**{i}. {row['Word']}** {row['Phonetic']} | {row['Meaning']}"):
                 st.write(f"📅 추가일: {row['Date']}")
                 
                 word_str = str(row['Word'])
