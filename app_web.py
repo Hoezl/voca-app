@@ -285,7 +285,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
         if is_wrong_mode: st.success("🎉 오답 노트가 비어있습니다! 완벽합니다!")
         else: st.warning("학습 중인 단어가 없습니다.")
     else:
-        # ⭐️ [핵심 추가] 테스트 방식 선택 UI
         test_mode_option = st.radio(
             "🎯 테스트 방식 선택",
             ["🔀 랜덤 섞기 (뜻+단어)", "🔤 영단어 맞추기 (뜻 ➔ 단어)", "🇰🇷 한글 뜻 맞추기 (단어 ➔ 뜻)"],
@@ -293,6 +292,7 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
         )
         st.divider()
 
+        # ⭐️ [핵심 추가] 테스트 변수 초기화 (점수 기록용 변수 포함)
         if 'test_menu' not in st.session_state or st.session_state.test_menu != menu:
             st.session_state.test_menu = menu
             st.session_state.prev_result = None
@@ -302,6 +302,13 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
             random.shuffle(queue)
             st.session_state.test_queue = queue
             if 'current_test_mode' in st.session_state: del st.session_state.current_test_mode
+            
+            # 테스트 결과 기록용 상태 변수
+            st.session_state.test_total_count = len(queue)
+            st.session_state.test_correct_count = 0
+            st.session_state.test_incorrect_count = 0
+            st.session_state.test_incorrect_words = []
+            st.session_state.show_incorrect_review = False
 
         if st.session_state.prev_result:
             res = st.session_state.prev_result
@@ -314,8 +321,43 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
 
         st.divider()
 
+        # ⭐️ [핵심 추가] 테스트가 모두 끝났을 때 보여주는 결과 화면
         if not st.session_state.test_queue:
+            st.balloons()
             st.success("🎉 준비된 모든 단어의 테스트가 끝났습니다! 정말 고생하셨습니다.")
+            
+            # 대시보드 형태의 결과 요약
+            st.subheader("📊 테스트 결과 요약")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("📝 총 문제", f"{st.session_state.test_total_count}개")
+            c2.metric("✅ 정답", f"{st.session_state.test_correct_count}개")
+            c3.metric("❌ 오답", f"{st.session_state.test_incorrect_count}개")
+            
+            st.divider()
+            
+            # 오답이 있을 경우에만 복습 버튼 표시
+            if st.session_state.test_incorrect_count > 0:
+                if st.button("🧐 이번 테스트에서 틀린 단어만 모아보기"):
+                    st.session_state.show_incorrect_review = True
+                    st.rerun()
+            else:
+                st.info("완벽합니다! 틀린 문제가 단 하나도 없습니다! 💯")
+                
+            # 틀린 단어 복습 리스트 출력
+            if st.session_state.get('show_incorrect_review'):
+                st.subheader("🔥 틀린 단어 복습 노트")
+                for i, w_info in enumerate(st.session_state.test_incorrect_words, start=1):
+                    with st.expander(f"**{i}. {w_info['Word']}** {w_info['Phonetic']} | {w_info['Meaning']}"):
+                        word_str = str(w_info['Word'])
+                        ex_str = str(w_info['Example'])
+                        highlighted_word = f"**:green[{word_str}]**"
+                        final_example = ex_str.replace(word_str, highlighted_word)
+                        
+                        st.markdown(f"📝 **예문:** {final_example}")
+                        if st.button("🔊 듣기", key=f"review_listen_{word_str}_{i}"):
+                            speak(word_str)
+            
+            st.divider()
             if st.button("🔄 처음부터 다시 풀기"):
                 refresh_pool = wrong_df if is_wrong_mode else df[df['Status'] == 'Learning']
                 if not refresh_pool.empty:
@@ -324,19 +366,26 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                     st.session_state.test_queue = queue
                     st.session_state.prev_result = None
                     if 'current_test_mode' in st.session_state: del st.session_state.current_test_mode
+                    
+                    # 변수 리셋
+                    st.session_state.test_total_count = len(queue)
+                    st.session_state.test_correct_count = 0
+                    st.session_state.test_incorrect_count = 0
+                    st.session_state.test_incorrect_words = []
+                    st.session_state.show_incorrect_review = False
+                    
                     st.rerun()
                 else:
                     st.success("더 이상 풀 문제가 없습니다!")
         else:
-            # ⭐️ [핵심 로직] 선택한 테스트 방식에 맞춰 모드 실시간 변경
             if test_mode_option == "🔀 랜덤 섞기 (뜻+단어)":
                 if 'current_test_mode' not in st.session_state:
                     st.session_state.current_test_mode = random.choice(['E2K', 'K2E'])
                 test_mode = st.session_state.current_test_mode
             elif test_mode_option == "🔤 영단어 맞추기 (뜻 ➔ 단어)":
                 test_mode = 'K2E'
-                st.session_state.pop('current_test_mode', None) # 고정 모드일 땐 랜덤 상태 삭제
-            else: # "🇰🇷 한글 뜻 맞추기 (단어 ➔ 뜻)"
+                st.session_state.pop('current_test_mode', None) 
+            else: 
                 test_mode = 'E2K'
                 st.session_state.pop('current_test_mode', None)
 
@@ -368,10 +417,15 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                         if re.sub(r'[^a-zA-Z]', '', ans).lower() == re.sub(r'[^a-zA-Z]', '', word_info['Word']).lower(): correct = True
 
                     if correct:
+                        # ⭐️ 정답 시 정답 카운트 +1
+                        st.session_state.test_correct_count += 1
                         if word_info['Word'] in wrong_df['Word'].values:
                             wrong_df = wrong_df[wrong_df['Word'] != word_info['Word']]
                             save_data(wrong_df, WRONG_FILE)
                     else:
+                        # ⭐️ 오답 시 오답 카운트 +1 및 오답 리스트에 단어 추가
+                        st.session_state.test_incorrect_count += 1
+                        st.session_state.test_incorrect_words.append(word_info.to_dict())
                         if word_info['Word'] not in wrong_df['Word'].values:
                             new_wrong = pd.DataFrame([word_info.to_dict()])
                             wrong_df = pd.concat([wrong_df, new_wrong], ignore_index=True)
