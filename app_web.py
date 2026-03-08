@@ -244,7 +244,6 @@ elif menu in ["📖 단어 관리", "📅 학습 기록"]:
 
         st.divider()
         
-        # ⭐️ [핵심 수정] 단어 목록 앞에 직관적인 순번(No.1, No.2...) 추가
         for i, (idx, row) in enumerate(view_df.iterrows(), start=1):
             with st.expander(f"**{i}. {row['Word']}** {row['Phonetic']} | {row['Meaning']}"):
                 st.write(f"📅 추가일: {row['Date']}")
@@ -286,6 +285,14 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
         if is_wrong_mode: st.success("🎉 오답 노트가 비어있습니다! 완벽합니다!")
         else: st.warning("학습 중인 단어가 없습니다.")
     else:
+        # ⭐️ [핵심 추가] 테스트 방식 선택 UI
+        test_mode_option = st.radio(
+            "🎯 테스트 방식 선택",
+            ["🔀 랜덤 섞기 (뜻+단어)", "🔤 영단어 맞추기 (뜻 ➔ 단어)", "🇰🇷 한글 뜻 맞추기 (단어 ➔ 뜻)"],
+            horizontal=True
+        )
+        st.divider()
+
         if 'test_menu' not in st.session_state or st.session_state.test_menu != menu:
             st.session_state.test_menu = menu
             st.session_state.prev_result = None
@@ -321,9 +328,17 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                 else:
                     st.success("더 이상 풀 문제가 없습니다!")
         else:
-            if 'current_test_mode' not in st.session_state:
-                st.session_state.current_test_mode = random.choice(['E2K', 'K2E'])
-            test_mode = st.session_state.current_test_mode
+            # ⭐️ [핵심 로직] 선택한 테스트 방식에 맞춰 모드 실시간 변경
+            if test_mode_option == "🔀 랜덤 섞기 (뜻+단어)":
+                if 'current_test_mode' not in st.session_state:
+                    st.session_state.current_test_mode = random.choice(['E2K', 'K2E'])
+                test_mode = st.session_state.current_test_mode
+            elif test_mode_option == "🔤 영단어 맞추기 (뜻 ➔ 단어)":
+                test_mode = 'K2E'
+                st.session_state.pop('current_test_mode', None) # 고정 모드일 땐 랜덤 상태 삭제
+            else: # "🇰🇷 한글 뜻 맞추기 (단어 ➔ 뜻)"
+                test_mode = 'E2K'
+                st.session_state.pop('current_test_mode', None)
 
             current_word_str = st.session_state.test_queue[0]
             word_info = current_pool[current_pool['Word'] == current_word_str].iloc[0]
@@ -368,7 +383,8 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                     }
                     st.session_state.audio_played = False
                     st.session_state.test_queue.pop(0) 
-                    del st.session_state.current_test_mode
+                    if 'current_test_mode' in st.session_state:
+                        del st.session_state.current_test_mode
                     st.rerun()
 
 # ----------------- 📊 학습 통계 -----------------
