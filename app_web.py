@@ -23,6 +23,7 @@ except Exception:
 
 VOCAB_FILE = 'my_vocab_web.csv'
 WRONG_FILE = 'my_vocab_wrong_web.csv'
+TEST_HISTORY_FILE = 'my_test_history_web.json' # ⭐️ 시험 결과 저장용 파일
 
 # ----------------- 🛠️ 핵심 함수 정의 -----------------
 def get_ai_response(prompt):
@@ -56,6 +57,19 @@ def load_data(file_path):
 def save_data(df, file_path):
     df.to_csv(file_path, index=False, encoding='utf-8-sig')
 
+# ⭐️ 시험 결과 기록용 Load/Save 함수
+def load_test_history():
+    if os.path.exists(TEST_HISTORY_FILE):
+        try:
+            with open(TEST_HISTORY_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except: return []
+    return []
+
+def save_test_history(data):
+    with open(TEST_HISTORY_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
 def parse_and_add_words(response_text, df, category, level):
     lines = response_text.strip().split('\n')
     new_rows = []
@@ -63,7 +77,6 @@ def parse_and_add_words(response_text, df, category, level):
         parts = line.split(';')
         if len(parts) >= 4:
             eng = re.sub(r'^[\d\.\)]+\s*', '', parts[0].replace('*', '').strip())
-            
             phonetic = parts[1].strip()
             if phonetic:
                 phonetic = phonetic.replace('[', '').replace(']', '').strip()
@@ -136,9 +149,10 @@ st.set_page_config(page_title="AI 영단어 마스터", layout="centered")
 st.title("🦉 AI 영단어 마스터 Web")
 
 st.sidebar.title("메뉴")
+# ⭐️ 메뉴에 '🏆 테스트 결과 기록' 추가
 menu = st.sidebar.selectbox("메뉴 선택", [
     "🤖 AI 단어 생성", "📖 단어 관리", "📝 실전 테스트", "📚 영어 기초 가이드", 
-    "📅 학습 기록", "📊 학습 통계", "✨ 단어 일괄 추가", "🔥 오답 노트 재도전"
+    "📅 학습 기록", "📊 학습 통계", "✨ 단어 일괄 추가", "🔥 오답 노트 재도전", "🏆 테스트 결과 기록"
 ])
 
 st.sidebar.divider()
@@ -160,7 +174,6 @@ if st.sidebar.button("🧹 시스템 캐시 및 오류 초기화"):
 df = load_data(VOCAB_FILE)
 wrong_df = load_data(WRONG_FILE)
 
-# ⭐️ 공통 AI 프롬프트 규칙
 AI_PROMPT_RULES = """
 [초강력 중요 규칙]
 1. 번호나 리스트 표시 절대 금지. 줄바꿈 없이 한 단어당 한 줄로만 작성.
@@ -182,7 +195,6 @@ if menu == "🤖 AI 단어 생성":
     if st.button("🚀 단어 생성 시작"):
         existing_words = ", ".join(df['Word'].tolist())
         prompt = f"당신은 1타 영어 강사입니다.\n분야: {category} / 난이도: {level} / {count}개 생성.\n중복 제외: {existing_words}\n{AI_PROMPT_RULES}"
-        
         with st.spinner("AI가 단어의 모든 품사를 스캔하여 요약 중입니다..."):
             try:
                 response = get_ai_response(prompt)
@@ -221,11 +233,9 @@ elif menu in ["📖 단어 관리", "📅 학습 기록"]:
     else:
         selected_indices = st.multiselect("여러 단어 동시 선택", view_df.index, format_func=lambda x: f"{view_df.loc[x, 'Word']} - {view_df.loc[x, 'Meaning']}")
         col1, col2, col3 = st.columns(3)
-        
         if col2.button("🔊 연속 듣기") and selected_indices:
             words_to_play = [df.loc[i, 'Word'] for i in selected_indices]
             play_sequence_audio(words_to_play) 
-            
         if menu == "📖 단어 관리":
             if col1.button("✅ 선택 완료"):
                 df.loc[selected_indices, 'Status'] = 'Completed'
@@ -243,22 +253,18 @@ elif menu in ["📖 단어 관리", "📅 학습 기록"]:
             st.rerun()
 
         st.divider()
-        
         for i, (idx, row) in enumerate(view_df.iterrows(), start=1):
             with st.expander(f"**{i}. {row['Word']}** {row['Phonetic']} | {row['Meaning']}"):
                 st.write(f"📅 추가일: {row['Date']}")
-                
                 word_str = str(row['Word'])
                 ex_str = str(row['Example'])
                 highlighted_word = f"**:green[{word_str}]**"
                 final_example = ex_str.replace(word_str, highlighted_word)
-                
                 st.markdown(f"📝 **예문:** {final_example}")
                 
                 c1, c2, c3 = st.columns(3)
                 if c1.button("🔊 듣기", key=f"btn_listen_{idx}_{time.time()}"):
                     speak(row['Word']) 
-                    
                 if menu == "📖 단어 관리":
                     if c2.button("✅ 학습 완료", key=f"btn_done_{idx}"):
                         df.loc[idx, 'Status'] = 'Completed'
@@ -269,7 +275,6 @@ elif menu in ["📖 단어 관리", "📅 학습 기록"]:
                         df.loc[idx, 'Status'] = 'Learning'
                         save_data(df, VOCAB_FILE)
                         st.rerun()
-                        
                 if c3.button("🗑️ 삭제", key=f"btn_del_{idx}"):
                     df = df.drop(idx)
                     save_data(df, VOCAB_FILE)
@@ -285,7 +290,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
         if is_wrong_mode: st.success("🎉 오답 노트가 비어있습니다! 완벽합니다!")
         else: st.warning("학습 중인 단어가 없습니다.")
     else:
-        # ⭐️ [핵심 추가] 테스트 방식에 4번째 오디오 모드 추가
         test_mode_option = st.radio(
             "🎯 테스트 방식 선택",
             [
@@ -298,6 +302,7 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
         )
         st.divider()
 
+        # ⭐️ 테스트 데이터 초기화 (상세 내역 보관용 리스트 추가)
         if 'test_menu' not in st.session_state or st.session_state.test_menu != menu:
             st.session_state.test_menu = menu
             st.session_state.prev_result = None
@@ -311,54 +316,63 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
             st.session_state.test_total_count = len(queue)
             st.session_state.test_correct_count = 0
             st.session_state.test_incorrect_count = 0
-            st.session_state.test_incorrect_words = []
-            st.session_state.show_incorrect_review = False
+            st.session_state.current_test_details = [] # 문제별 상세 내역
+            st.session_state.test_saved = False # 결과 저장 여부 플래그
 
         if st.session_state.prev_result:
             res = st.session_state.prev_result
             if res['correct']: st.success(f"✅ 이전 문제 정답! ({res['word']} : {res['meaning']})")
             else: st.error(f"❌ 이전 문제 오답... 정답: **{res['word']}** | {res['meaning']} (내 입력: {res['user_ans']})")
             st.info(f"💡 예문: {res['example']}")
-            
-            # 발음 듣고 맞추기 모드에서는 정답 후 자동으로 재생하지 않음(문제 재생과 겹침 방지)
             if not st.session_state.get('audio_played') and res['mode'] != 'LISTEN':
                 speak(res['word'])
                 st.session_state.audio_played = True 
 
         st.divider()
 
+        # ⭐️ [핵심 추가] 테스트 종료 화면 및 결과 리포트 출력
         if not st.session_state.test_queue:
+            # 1) JSON 파일에 현재 시험 결과 영구 저장
+            if not st.session_state.get('test_saved'):
+                test_record = {
+                    "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "type": menu,
+                    "total": st.session_state.test_total_count,
+                    "correct": st.session_state.test_correct_count,
+                    "incorrect": st.session_state.test_incorrect_count,
+                    "details": st.session_state.current_test_details
+                }
+                history = load_test_history()
+                history.insert(0, test_record) # 최신 순 정렬
+                save_test_history(history)
+                st.session_state.test_saved = True
+
             st.balloons()
-            st.success("🎉 준비된 모든 단어의 테스트가 끝났습니다! 정말 고생하셨습니다.")
+            st.success("🎉 준비된 모든 단어의 테스트가 끝났습니다! 수고하셨습니다.")
             
+            # 2) 대시보드 출력
             st.subheader("📊 테스트 결과 요약")
             c1, c2, c3 = st.columns(3)
             c1.metric("📝 총 문제", f"{st.session_state.test_total_count}개")
             c2.metric("✅ 정답", f"{st.session_state.test_correct_count}개")
             c3.metric("❌ 오답", f"{st.session_state.test_incorrect_count}개")
-            
             st.divider()
             
-            if st.session_state.test_incorrect_count > 0:
-                if st.button("🧐 이번 테스트에서 틀린 단어만 모아보기"):
-                    st.session_state.show_incorrect_review = True
-                    st.rerun()
-            else:
-                st.info("완벽합니다! 틀린 문제가 단 하나도 없습니다! 💯")
+            # 3) 상세 결과지(시험지) 출력
+            st.subheader("📋 전체 문제 풀이 결과")
+            for i, detail in enumerate(st.session_state.current_test_details, 1):
+                status_mark = "✅ (정답)" if detail['is_correct'] else "❌ (오답)"
+                st.markdown(f"**문제 {i}. {status_mark}**")
+                st.markdown(f"> **{detail['word']}** {detail['phonetic']} | {detail['meaning']}")
                 
-            if st.session_state.get('show_incorrect_review'):
-                st.subheader("🔥 틀린 단어 복습 노트")
-                for i, w_info in enumerate(st.session_state.test_incorrect_words, start=1):
-                    with st.expander(f"**{i}. {w_info['Word']}** {w_info['Phonetic']} | {w_info['Meaning']}"):
-                        word_str = str(w_info['Word'])
-                        ex_str = str(w_info['Example'])
-                        highlighted_word = f"**:green[{word_str}]**"
-                        final_example = ex_str.replace(word_str, highlighted_word)
-                        
-                        st.markdown(f"📝 **예문:** {final_example}")
-                        if st.button("🔊 듣기", key=f"review_listen_{word_str}_{i}"):
-                            speak(word_str)
-            
+                # 오답이면 빨간색으로, 정답이면 일반색으로 표시
+                disp_eng = detail['user_eng'] if detail['eng_correct'] else f"**:red[{detail['user_eng']}]**"
+                disp_kor = detail['user_kor'] if detail['kor_correct'] else f"**:red[{detail['user_kor']}]**"
+                
+                # 답안 출력 포맷: 영어 | 한글
+                st.markdown(f"**답안:** {disp_eng} | {disp_kor}")
+                st.write("") # 간격 띄우기
+
             st.divider()
             if st.button("🔄 처음부터 다시 풀기"):
                 refresh_pool = wrong_df if is_wrong_mode else df[df['Status'] == 'Learning']
@@ -372,13 +386,12 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                     st.session_state.test_total_count = len(queue)
                     st.session_state.test_correct_count = 0
                     st.session_state.test_incorrect_count = 0
-                    st.session_state.test_incorrect_words = []
-                    st.session_state.show_incorrect_review = False
+                    st.session_state.current_test_details = []
+                    st.session_state.test_saved = False
                     st.rerun()
                 else:
                     st.success("더 이상 풀 문제가 없습니다!")
         else:
-            # 테스트 방식 할당
             if test_mode_option == "🔀 랜덤 섞기 (뜻+단어)":
                 if 'current_test_mode' not in st.session_state:
                     st.session_state.current_test_mode = random.choice(['E2K', 'K2E'])
@@ -398,7 +411,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
 
             st.write(f"📝 남은 문제: {len(st.session_state.test_queue)}개")
             
-            # ⭐️ [핵심 로직] 리스닝 모드 UI 분기
             if test_mode == 'LISTEN':
                 st.subheader("Q: 🎧 소리를 듣고 영단어와 뜻을 적어주세요!")
                 st.info("💡 아래 [문제 발음 듣기] 버튼을 누르세요.")
@@ -412,7 +424,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                 st.caption("해당하는 영어 단어는?")
 
             with st.form(key=f"test_form_{current_word_str}", clear_on_submit=True):
-                # ⭐️ 리스닝 모드일 때는 입력칸 2개 제공
                 if test_mode == 'LISTEN':
                     ans_eng = st.text_input("✍️ 영어 단어 (스펠링) 입력")
                     ans_kor = st.text_input("✍️ 한글 뜻 입력")
@@ -420,46 +431,57 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                     ans = st.text_input("✍️ 정답을 입력하고 엔터(Enter)를 누르세요.")
                     
                 submitted = st.form_submit_button("제출")
-                
-                # 입력창 자동 포커스 (리스닝 모드일 땐 첫 번째 입력창인 스펠링 입력창에 포커스)
                 focus_idx = 2 if test_mode == 'LISTEN' else 1
                 components.html(f"<script>const inputs = window.parent.document.querySelectorAll('input[type=\"text\"]'); if (inputs.length >= {focus_idx}) {{ inputs[inputs.length - {focus_idx}].focus(); }}</script>", height=0, width=0)
 
                 if submitted:
-                    # 빈칸 제출 방지 경고
                     if test_mode == 'LISTEN' and (not ans_eng.strip() or not ans_kor.strip()):
                         st.warning("⚠️ 영어 단어와 한글 뜻을 모두 입력해주세요!")
                     elif test_mode != 'LISTEN' and not ans.strip():
                         st.warning("⚠️ 정답을 입력해주세요!")
                     else:
+                        # ⭐️ [핵심 로직] 정답 채점 및 부위별 오답 확인
                         correct = False
-                        user_ans_display = ""
+                        is_eng_correct = True
+                        is_kor_correct = True
+                        u_eng = ""
+                        u_kor = ""
                         
+                        clean_meaning_full = re.sub(r'[\s\(\)\[\]\,\/]', '', word_info['Meaning'])
+                        for tag in ["명사", "동사", "대명사", "형용사", "부사", "전치사", "접속사", "감탄사", ":"]:
+                            clean_meaning_full = clean_meaning_full.replace(tag, "")
+
                         if test_mode == 'E2K':
+                            u_eng = word_info['Word']
+                            u_kor = ans
                             clean_ans = re.sub(r'[\s\(\)\[\]\,\/]', '', ans)
-                            clean_meaning = re.sub(r'[\s\(\)\[\]\,\/]', '', word_info['Meaning'])
-                            for tag in ["명사", "동사", "대명사", "형용사", "부사", "전치사", "접속사", "감탄사", ":"]:
-                                clean_meaning = clean_meaning.replace(tag, "")
-                            if clean_ans and clean_ans in clean_meaning: correct = True
-                            user_ans_display = ans
+                            if clean_ans and clean_ans in clean_meaning_full:
+                                correct = True
+                            else:
+                                is_kor_correct = False
                             
                         elif test_mode == 'K2E':
-                            if re.sub(r'[^a-zA-Z]', '', ans).lower() == re.sub(r'[^a-zA-Z]', '', word_info['Word']).lower(): correct = True
-                            user_ans_display = ans
+                            u_eng = ans
+                            u_kor = word_info['Meaning']
+                            if re.sub(r'[^a-zA-Z]', '', ans).lower() == re.sub(r'[^a-zA-Z]', '', word_info['Word']).lower():
+                                correct = True
+                            else:
+                                is_eng_correct = False
                             
                         elif test_mode == 'LISTEN':
+                            u_eng = ans_eng
+                            u_kor = ans_kor
                             clean_ans_eng = re.sub(r'[^a-zA-Z]', '', ans_eng).lower()
                             clean_word = re.sub(r'[^a-zA-Z]', '', word_info['Word']).lower()
-                            
                             clean_ans_kor = re.sub(r'[\s\(\)\[\]\,\/]', '', ans_kor)
-                            clean_meaning = re.sub(r'[\s\(\)\[\]\,\/]', '', word_info['Meaning'])
-                            for tag in ["명사", "동사", "대명사", "형용사", "부사", "전치사", "접속사", "감탄사", ":"]:
-                                clean_meaning = clean_meaning.replace(tag, "")
+                            
+                            if clean_ans_eng == clean_word: is_eng_correct = True
+                            else: is_eng_correct = False
                                 
-                            # 두 개 모두 정답이어야 통과
-                            if (clean_ans_eng == clean_word) and (clean_ans_kor and clean_ans_kor in clean_meaning):
-                                correct = True
-                            user_ans_display = f"{ans_eng} / {ans_kor}"
+                            if clean_ans_kor and clean_ans_kor in clean_meaning_full: is_kor_correct = True
+                            else: is_kor_correct = False
+                                
+                            if is_eng_correct and is_kor_correct: correct = True
 
                         if correct:
                             st.session_state.test_correct_count += 1
@@ -468,21 +490,68 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                                 save_data(wrong_df, WRONG_FILE)
                         else:
                             st.session_state.test_incorrect_count += 1
-                            st.session_state.test_incorrect_words.append(word_info.to_dict())
                             if word_info['Word'] not in wrong_df['Word'].values:
                                 new_wrong = pd.DataFrame([word_info.to_dict()])
                                 wrong_df = pd.concat([wrong_df, new_wrong], ignore_index=True)
                                 save_data(wrong_df, WRONG_FILE)
+                        
+                        # ⭐️ 문제 상세 내역 저장 (빈칸은 '(빈칸)' 처리)
+                        st.session_state.current_test_details.append({
+                            "word": word_info['Word'],
+                            "phonetic": word_info['Phonetic'],
+                            "meaning": word_info['Meaning'],
+                            "user_eng": u_eng if u_eng.strip() else "(빈칸)",
+                            "user_kor": u_kor if u_kor.strip() else "(빈칸)",
+                            "is_correct": correct,
+                            "eng_correct": is_eng_correct,
+                            "kor_correct": is_kor_correct,
+                            "mode": test_mode
+                        })
 
+                        # 화면 상단 알림용 임시 데이터
+                        display_ans = f"{u_eng} | {u_kor}" if test_mode == 'LISTEN' else ans
                         st.session_state.prev_result = {
                             'correct': correct, 'word': word_info['Word'], 'meaning': word_info['Meaning'],
-                            'example': word_info['Example'], 'user_ans': user_ans_display, 'mode': test_mode
+                            'example': word_info['Example'], 'user_ans': display_ans, 'mode': test_mode
                         }
                         st.session_state.audio_played = False
                         st.session_state.test_queue.pop(0) 
                         if 'current_test_mode' in st.session_state:
                             del st.session_state.current_test_mode
                         st.rerun()
+
+# ----------------- 🏆 테스트 결과 기록 (새로운 메뉴) -----------------
+elif menu == "🏆 테스트 결과 기록":
+    st.header("🏆 내 테스트 기록 보관함")
+    st.write("과거에 진행했던 테스트 결과와 오답 노트를 한눈에 볼 수 있습니다.")
+    
+    history_data = load_test_history()
+    
+    if not history_data:
+        st.info("아직 저장된 테스트 기록이 없습니다. 먼저 실전 테스트를 완료해 보세요!")
+    else:
+        # 최신 순으로 출력 (이미 insert(0, )로 저장되어 있음)
+        for h_idx, record in enumerate(history_data):
+            expander_title = f"🗓️ {record['date']} | {record['type']} | 총 {record['total']}문제 | 정답 {record['correct']} / 오답 {record['incorrect']}"
+            with st.expander(expander_title):
+                st.subheader(f"📊 점수 요약")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("총 문제", f"{record['total']}개")
+                c2.metric("정답", f"{record['correct']}개")
+                c3.metric("오답", f"{record['incorrect']}개")
+                
+                st.divider()
+                st.subheader("📋 전체 문제 상세 리뷰")
+                for i, detail in enumerate(record['details'], 1):
+                    status_mark = "✅ (정답)" if detail['is_correct'] else "❌ (오답)"
+                    st.markdown(f"**문제 {i}. {status_mark}**")
+                    st.markdown(f"> **{detail['word']}** {detail['phonetic']} | {detail['meaning']}")
+                    
+                    disp_eng = detail['user_eng'] if detail['eng_correct'] else f"**:red[{detail['user_eng']}]**"
+                    disp_kor = detail['user_kor'] if detail['kor_correct'] else f"**:red[{detail['user_kor']}]**"
+                    
+                    st.markdown(f"**답안:** {disp_eng} | {disp_kor}")
+                    st.write("") 
 
 # ----------------- 📊 학습 통계 -----------------
 elif menu == "📊 학습 통계":
@@ -562,93 +631,63 @@ elif menu == "📚 영어 기초 가이드":
 
         st.divider()
         st.markdown("### 2. 불규칙 동사 모음 (Irregular Verbs)")
-        
-        st.markdown("#### ① A-A-A 형 (형태가 모두 같음)")
         render_mobile_table(["현재(V)", "과거", "과거분사", "뜻"], [
             ["put", "put", "put", "놓다"], ["cut", "cut", "cut", "자르다"],
             ["read", "read(레드)", "read(레드)", "읽다"], ["hit", "hit", "hit", "치다"],
-            ["set", "set", "set", "세팅하다"], ["let", "let", "let", "허락하다"]
-        ])
-
-        st.markdown("#### ② A-B-A 형 (현재와 과거분사가 같음)")
-        render_mobile_table(["현재(V)", "과거", "과거분사", "뜻"], [
+            ["set", "set", "set", "세팅하다"], ["let", "let", "let", "허락하다"],
             ["come", "came", "come", "오다"], ["run", "ran", "run", "달리다"],
-            ["become", "became", "become", "~이 되다"]
-        ])
-
-        st.markdown("#### ③ A-B-B 형 (과거와 과거분사가 같음)")
-        render_mobile_table(["현재(V)", "과거", "과거분사", "뜻"], [
             ["buy", "bought", "bought", "사다"], ["catch", "caught", "caught", "잡다"],
-            ["feel", "felt", "felt", "느끼다"], ["find", "found", "found", "찾다"],
             ["have", "had", "had", "가지다"], ["make", "made", "made", "만들다"],
-            ["say", "said", "said", "말하다"], ["teach", "taught", "taught", "가르치다"],
-            ["keep", "kept", "kept", "유지하다"], ["sleep", "slept", "slept", "자다"]
-        ])
-
-        st.markdown("#### ④ A-B-C 형 (3개가 모두 다름)")
-        render_mobile_table(["현재(V)", "과거", "과거분사", "뜻"], [
-            ["be(am/is/are)", "was/were", "been", "이다, 있다"], ["begin", "began", "begun", "시작하다"],
-            ["break", "broke", "broken", "깨다"], ["do", "did", "done", "하다"],
-            ["eat", "ate", "eaten", "먹다"], ["go", "went", "gone", "가다"],
-            ["know", "knew", "known", "알다"], ["see", "saw", "seen", "보다"],
-            ["take", "took", "taken", "가져가다"], ["write", "wrote", "written", "쓰다"],
-            ["drive", "drove", "driven", "운전하다"], ["speak", "spoke", "spoken", "말하다"]
+            ["be(am/is/are)", "was/were", "been", "이다, 있다"], ["go", "went", "gone", "가다"],
+            ["take", "took", "taken", "가져가다"], ["write", "wrote", "written", "쓰다"]
         ])
 
     with tab3:
         st.subheader("🌱 기초 구문 (명사, 대명사, 전치사)")
         st.markdown("""
         **■ 1. 가산명사 vs 불가산명사**
-        * **가산명사 (셀 수 있음)**: 하나면 앞에 `a/an`, 여러 개면 뒤에 `-s`를 붙입니다. (예: `an apple`, `apples`)
-        * **불가산명사 (셀 수 없음)**: 액체나 덩어리, 안보이는 개념. `a`나 `-s`를 붙일 수 없습니다. (예: `water`, `information`)
+        * **가산명사**: 하나면 `a/an`, 여러 개면 `-s`. (예: `an apple`)
+        * **불가산명사**: 셀 수 없음. `a`나 `-s` 금지. (예: `water`)
 
         **■ 2. 만능 단어 'it'의 3가지 쓰임**
-        * **지시대명사**: 앞서 말한 그것. "Where is my book? **It** is on the desk."
-        * **비인칭주어**: 시간/날씨/거리에서 자리만 채움. "**It** is raining."
-        * **가주어**: 진짜 주어가 길어서 빈자리를 채움. "**It** is hard to master English."
+        * **지시대명사**: 앞서 말한 그것.
+        * **비인칭주어**: 시간/날씨 자리 채움 (해석 안함).
+        * **가주어**: 진짜 주어가 길어서 빈자리를 채움.
 
         **■ 3. 전치사 (for vs during)**
-        * **for + 숫자 기간**: 시간의 '양'을 나타냄. "I slept **for 3 hours**."
-        * **during + 특정 기간 명사**: 시간의 '이름'을 나타냄. "I slept **during the class**."
+        * **for + 숫자 기간**: 시간의 양. ("for 3 hours")
+        * **during + 특정 기간 명사**: 시간의 이름. ("during the class")
         """)
 
     with tab4:
         st.subheader("🌿 문장과 시제 (5형식과 동사)")
         st.markdown("""
-        **■ 1. 문장의 5형식 (자리가 뜻을 결정한다!)**
+        **■ 1. 문장의 5형식**
         * **1형식 (S+V)**: I run.
         * **2형식 (S+V+C)**: I am a student.
         * **3형식 (S+V+O)**: I love you.
         * **4형식 (S+V+O1+O2)**: I gave him a book.
         * **5형식 (S+V+O+C)**: I made him happy.
 
-        **■ 2. 시제 (Tense) 완벽 이해**
-        * **현재시제**: 지금이 아니라 '늘상 하는 습관/팩트'. "I go to school."
-        * **진행형(be+ing)**: 지금 생생하게 하는 중. "I am eating."
+        **■ 2. 시제 (Tense)**
+        * **현재시제**: 늘상 하는 습관/팩트.
         * **현재완료 (have+p.p)**: 과거의 일이 '현재'까지 영향을 미칠 때. 
-
-        **■ 3. 조동사 (추측/의무/used to)**
-        * **추측**: must (99% 확신), may (50%), cannot (~일 리 없다)
-        * **의무**: must / have to (강제), should (부드러운 조언)
         """)
 
     with tab5:
         st.subheader("🌳 심화 문법 (길고 세련된 문장 만들기)")
         st.markdown("""
         **■ 1. 준동사 (to부정사 vs 동명사)**
-        * **to부정사 (to+동사원형)**: 미래, 지향적 성향. (want, hope 뒤에 옴) 
-        * **동명사 (동사원형+ing)**: 과거, 경험 성향. (finish, enjoy 뒤에 옴) 
+        * **to부정사**: 미래, 지향적 성향. 
+        * **동명사**: 과거, 경험 성향. 
 
         **■ 2. 분사 (현재분사 vs 과거분사)**
-        동사를 형용사로 변신시킴.
-        * **현재분사 (-ing)**: 능동/진행. "a sleeping baby" (자고 있는 아기)
-        * **과거분사 (p.p)**: 수동/완료. "a broken window" (누군가에 깨진 창문)
+        * **현재분사 (-ing)**: 능동/진행. 
+        * **과거분사 (p.p)**: 수동/완료. 
 
         **■ 3. 관계대명사 (who, which, that)**
-        문장을 두 번 말하기 귀찮을 때, 선행사(명사) 뒤에 접착제를 붙여 문장으로 길게 설명.
-        * "I saw the man **who** was running."
+        문장을 두 번 말하기 귀찮을 때 선행사 뒤에 붙여 설명.
 
         **■ 4. 수동태 (be동사 + p.p)**
-        주어가 행동을 '당할 때', 또는 행위자보다 당한 대상이 중요할 때 사용.
-        * "My car **was stolen**."
+        주어가 행동을 당할 때 사용.
         """)
