@@ -285,14 +285,19 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
         if is_wrong_mode: st.success("🎉 오답 노트가 비어있습니다! 완벽합니다!")
         else: st.warning("학습 중인 단어가 없습니다.")
     else:
+        # ⭐️ [핵심 추가] 테스트 방식에 4번째 오디오 모드 추가
         test_mode_option = st.radio(
             "🎯 테스트 방식 선택",
-            ["🔀 랜덤 섞기 (뜻+단어)", "🔤 영단어 맞추기 (뜻 ➔ 단어)", "🇰🇷 한글 뜻 맞추기 (단어 ➔ 뜻)"],
-            horizontal=True
+            [
+                "🔀 랜덤 섞기 (뜻+단어)", 
+                "🔤 영단어 맞추기 (뜻 ➔ 단어)", 
+                "🇰🇷 한글 뜻 맞추기 (단어 ➔ 뜻)",
+                "🎧 발음 듣고 맞추기 (단어+뜻 모두)"
+            ],
+            horizontal=False
         )
         st.divider()
 
-        # ⭐️ [핵심 추가] 테스트 변수 초기화 (점수 기록용 변수 포함)
         if 'test_menu' not in st.session_state or st.session_state.test_menu != menu:
             st.session_state.test_menu = menu
             st.session_state.prev_result = None
@@ -303,7 +308,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
             st.session_state.test_queue = queue
             if 'current_test_mode' in st.session_state: del st.session_state.current_test_mode
             
-            # 테스트 결과 기록용 상태 변수
             st.session_state.test_total_count = len(queue)
             st.session_state.test_correct_count = 0
             st.session_state.test_incorrect_count = 0
@@ -315,18 +319,18 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
             if res['correct']: st.success(f"✅ 이전 문제 정답! ({res['word']} : {res['meaning']})")
             else: st.error(f"❌ 이전 문제 오답... 정답: **{res['word']}** | {res['meaning']} (내 입력: {res['user_ans']})")
             st.info(f"💡 예문: {res['example']}")
-            if not st.session_state.get('audio_played'):
+            
+            # 발음 듣고 맞추기 모드에서는 정답 후 자동으로 재생하지 않음(문제 재생과 겹침 방지)
+            if not st.session_state.get('audio_played') and res['mode'] != 'LISTEN':
                 speak(res['word'])
                 st.session_state.audio_played = True 
 
         st.divider()
 
-        # ⭐️ [핵심 추가] 테스트가 모두 끝났을 때 보여주는 결과 화면
         if not st.session_state.test_queue:
             st.balloons()
             st.success("🎉 준비된 모든 단어의 테스트가 끝났습니다! 정말 고생하셨습니다.")
             
-            # 대시보드 형태의 결과 요약
             st.subheader("📊 테스트 결과 요약")
             c1, c2, c3 = st.columns(3)
             c1.metric("📝 총 문제", f"{st.session_state.test_total_count}개")
@@ -335,7 +339,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
             
             st.divider()
             
-            # 오답이 있을 경우에만 복습 버튼 표시
             if st.session_state.test_incorrect_count > 0:
                 if st.button("🧐 이번 테스트에서 틀린 단어만 모아보기"):
                     st.session_state.show_incorrect_review = True
@@ -343,7 +346,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
             else:
                 st.info("완벽합니다! 틀린 문제가 단 하나도 없습니다! 💯")
                 
-            # 틀린 단어 복습 리스트 출력
             if st.session_state.get('show_incorrect_review'):
                 st.subheader("🔥 틀린 단어 복습 노트")
                 for i, w_info in enumerate(st.session_state.test_incorrect_words, start=1):
@@ -367,17 +369,16 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                     st.session_state.prev_result = None
                     if 'current_test_mode' in st.session_state: del st.session_state.current_test_mode
                     
-                    # 변수 리셋
                     st.session_state.test_total_count = len(queue)
                     st.session_state.test_correct_count = 0
                     st.session_state.test_incorrect_count = 0
                     st.session_state.test_incorrect_words = []
                     st.session_state.show_incorrect_review = False
-                    
                     st.rerun()
                 else:
                     st.success("더 이상 풀 문제가 없습니다!")
         else:
+            # 테스트 방식 할당
             if test_mode_option == "🔀 랜덤 섞기 (뜻+단어)":
                 if 'current_test_mode' not in st.session_state:
                     st.session_state.current_test_mode = random.choice(['E2K', 'K2E'])
@@ -385,15 +386,25 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
             elif test_mode_option == "🔤 영단어 맞추기 (뜻 ➔ 단어)":
                 test_mode = 'K2E'
                 st.session_state.pop('current_test_mode', None) 
-            else: 
+            elif test_mode_option == "🇰🇷 한글 뜻 맞추기 (단어 ➔ 뜻)": 
                 test_mode = 'E2K'
+                st.session_state.pop('current_test_mode', None)
+            else:
+                test_mode = 'LISTEN'
                 st.session_state.pop('current_test_mode', None)
 
             current_word_str = st.session_state.test_queue[0]
             word_info = current_pool[current_pool['Word'] == current_word_str].iloc[0]
 
             st.write(f"📝 남은 문제: {len(st.session_state.test_queue)}개")
-            if test_mode == 'E2K':
+            
+            # ⭐️ [핵심 로직] 리스닝 모드 UI 분기
+            if test_mode == 'LISTEN':
+                st.subheader("Q: 🎧 소리를 듣고 영단어와 뜻을 적어주세요!")
+                st.info("💡 아래 [문제 발음 듣기] 버튼을 누르세요.")
+                if st.button("🔊 문제 발음 듣기", key=f"listen_btn_{current_word_str}"):
+                    speak(word_info['Word'])
+            elif test_mode == 'E2K':
                 st.subheader(f"Q: {word_info['Word']} {word_info['Phonetic']}")
                 st.caption("이 단어의 뜻은?")
             else:
@@ -401,45 +412,77 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                 st.caption("해당하는 영어 단어는?")
 
             with st.form(key=f"test_form_{current_word_str}", clear_on_submit=True):
-                ans = st.text_input("✍️ 정답을 입력하고 엔터(Enter)를 누르세요.")
+                # ⭐️ 리스닝 모드일 때는 입력칸 2개 제공
+                if test_mode == 'LISTEN':
+                    ans_eng = st.text_input("✍️ 영어 단어 (스펠링) 입력")
+                    ans_kor = st.text_input("✍️ 한글 뜻 입력")
+                else:
+                    ans = st.text_input("✍️ 정답을 입력하고 엔터(Enter)를 누르세요.")
+                    
                 submitted = st.form_submit_button("제출")
-                components.html("<script>const inputs = window.parent.document.querySelectorAll('input[type=\"text\"]'); if (inputs.length > 0) { inputs[inputs.length - 1].focus(); }</script>", height=0, width=0)
+                
+                # 입력창 자동 포커스 (리스닝 모드일 땐 첫 번째 입력창인 스펠링 입력창에 포커스)
+                focus_idx = 2 if test_mode == 'LISTEN' else 1
+                components.html(f"<script>const inputs = window.parent.document.querySelectorAll('input[type=\"text\"]'); if (inputs.length >= {focus_idx}) {{ inputs[inputs.length - {focus_idx}].focus(); }}</script>", height=0, width=0)
 
-                if submitted and ans:
-                    correct = False
-                    if test_mode == 'E2K':
-                        clean_ans = re.sub(r'[\s\(\)\[\]\,\/]', '', ans)
-                        clean_meaning = re.sub(r'[\s\(\)\[\]\,\/]', '', word_info['Meaning'])
-                        for tag in ["명사", "동사", "대명사", "형용사", "부사", "전치사", "접속사", "감탄사", ":"]:
-                            clean_meaning = clean_meaning.replace(tag, "")
-                        if clean_ans and clean_ans in clean_meaning: correct = True
+                if submitted:
+                    # 빈칸 제출 방지 경고
+                    if test_mode == 'LISTEN' and (not ans_eng.strip() or not ans_kor.strip()):
+                        st.warning("⚠️ 영어 단어와 한글 뜻을 모두 입력해주세요!")
+                    elif test_mode != 'LISTEN' and not ans.strip():
+                        st.warning("⚠️ 정답을 입력해주세요!")
                     else:
-                        if re.sub(r'[^a-zA-Z]', '', ans).lower() == re.sub(r'[^a-zA-Z]', '', word_info['Word']).lower(): correct = True
+                        correct = False
+                        user_ans_display = ""
+                        
+                        if test_mode == 'E2K':
+                            clean_ans = re.sub(r'[\s\(\)\[\]\,\/]', '', ans)
+                            clean_meaning = re.sub(r'[\s\(\)\[\]\,\/]', '', word_info['Meaning'])
+                            for tag in ["명사", "동사", "대명사", "형용사", "부사", "전치사", "접속사", "감탄사", ":"]:
+                                clean_meaning = clean_meaning.replace(tag, "")
+                            if clean_ans and clean_ans in clean_meaning: correct = True
+                            user_ans_display = ans
+                            
+                        elif test_mode == 'K2E':
+                            if re.sub(r'[^a-zA-Z]', '', ans).lower() == re.sub(r'[^a-zA-Z]', '', word_info['Word']).lower(): correct = True
+                            user_ans_display = ans
+                            
+                        elif test_mode == 'LISTEN':
+                            clean_ans_eng = re.sub(r'[^a-zA-Z]', '', ans_eng).lower()
+                            clean_word = re.sub(r'[^a-zA-Z]', '', word_info['Word']).lower()
+                            
+                            clean_ans_kor = re.sub(r'[\s\(\)\[\]\,\/]', '', ans_kor)
+                            clean_meaning = re.sub(r'[\s\(\)\[\]\,\/]', '', word_info['Meaning'])
+                            for tag in ["명사", "동사", "대명사", "형용사", "부사", "전치사", "접속사", "감탄사", ":"]:
+                                clean_meaning = clean_meaning.replace(tag, "")
+                                
+                            # 두 개 모두 정답이어야 통과
+                            if (clean_ans_eng == clean_word) and (clean_ans_kor and clean_ans_kor in clean_meaning):
+                                correct = True
+                            user_ans_display = f"{ans_eng} / {ans_kor}"
 
-                    if correct:
-                        # ⭐️ 정답 시 정답 카운트 +1
-                        st.session_state.test_correct_count += 1
-                        if word_info['Word'] in wrong_df['Word'].values:
-                            wrong_df = wrong_df[wrong_df['Word'] != word_info['Word']]
-                            save_data(wrong_df, WRONG_FILE)
-                    else:
-                        # ⭐️ 오답 시 오답 카운트 +1 및 오답 리스트에 단어 추가
-                        st.session_state.test_incorrect_count += 1
-                        st.session_state.test_incorrect_words.append(word_info.to_dict())
-                        if word_info['Word'] not in wrong_df['Word'].values:
-                            new_wrong = pd.DataFrame([word_info.to_dict()])
-                            wrong_df = pd.concat([wrong_df, new_wrong], ignore_index=True)
-                            save_data(wrong_df, WRONG_FILE)
+                        if correct:
+                            st.session_state.test_correct_count += 1
+                            if word_info['Word'] in wrong_df['Word'].values:
+                                wrong_df = wrong_df[wrong_df['Word'] != word_info['Word']]
+                                save_data(wrong_df, WRONG_FILE)
+                        else:
+                            st.session_state.test_incorrect_count += 1
+                            st.session_state.test_incorrect_words.append(word_info.to_dict())
+                            if word_info['Word'] not in wrong_df['Word'].values:
+                                new_wrong = pd.DataFrame([word_info.to_dict()])
+                                wrong_df = pd.concat([wrong_df, new_wrong], ignore_index=True)
+                                save_data(wrong_df, WRONG_FILE)
 
-                    st.session_state.prev_result = {
-                        'correct': correct, 'word': word_info['Word'], 'meaning': word_info['Meaning'],
-                        'example': word_info['Example'], 'user_ans': ans
-                    }
-                    st.session_state.audio_played = False
-                    st.session_state.test_queue.pop(0) 
-                    if 'current_test_mode' in st.session_state:
-                        del st.session_state.current_test_mode
-                    st.rerun()
+                        st.session_state.prev_result = {
+                            'correct': correct, 'word': word_info['Word'], 'meaning': word_info['Meaning'],
+                            'example': word_info['Example'], 'user_ans': user_ans_display, 'mode': test_mode
+                        }
+                        st.session_state.audio_played = False
+                        st.session_state.test_queue.pop(0) 
+                        if 'current_test_mode' in st.session_state:
+                            del st.session_state.current_test_mode
+                        st.rerun()
 
 # ----------------- 📊 학습 통계 -----------------
 elif menu == "📊 학습 통계":
