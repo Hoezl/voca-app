@@ -57,7 +57,6 @@ def load_data(file_path):
 def save_data(df, file_path):
     df.to_csv(file_path, index=False, encoding='utf-8-sig')
 
-# ⭐️ 시험 결과 기록용 Load/Save 함수
 def load_test_history():
     if os.path.exists(TEST_HISTORY_FILE):
         try:
@@ -94,7 +93,8 @@ def parse_and_add_words(response_text, df, category, level):
         df = pd.concat([df, new_df], ignore_index=True).drop_duplicates('Word')
     return df, len(new_rows)
 
-def speak(text):
+# ⭐️ 수정됨: loop 옵션 추가 (2.5초 간격 무한 반복 기능)
+def speak(text, loop=False):
     pure_text = text.split('[')[0].strip()
     try:
         tts = gTTS(text=pure_text, lang='en')
@@ -102,7 +102,25 @@ def speak(text):
         with open("temp.mp3", "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
             unique_id = random.randint(1, 10000000)
-            components.html(f'<audio autoplay><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio><div style="display:none;">{unique_id}</div>', height=0, width=0)
+            
+            if loop:
+                html_code = f"""
+                <audio id="audio_{unique_id}" autoplay>
+                    <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+                </audio>
+                <script>
+                    const audioEl = document.getElementById('audio_{unique_id}');
+                    audioEl.onended = function() {{
+                        setTimeout(() => {{
+                            audioEl.play().catch(e => console.log(e));
+                        }}, 2500); // 2.5초 대기 후 재생
+                    }};
+                </script>
+                """
+            else:
+                html_code = f'<audio autoplay><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
+                
+            components.html(html_code + f'<div style="display:none;">{unique_id}</div>', height=0, width=0)
     except Exception: pass 
 
 def play_sequence_audio(words):
@@ -149,7 +167,6 @@ st.set_page_config(page_title="AI 영단어 마스터", layout="centered")
 st.title("🦉 AI 영단어 마스터 Web")
 
 st.sidebar.title("메뉴")
-# ⭐️ 메뉴에 '🏆 테스트 결과 기록' 추가
 menu = st.sidebar.selectbox("메뉴 선택", [
     "🤖 AI 단어 생성", "📖 단어 관리", "📝 실전 테스트", "📚 영어 기초 가이드", 
     "📅 학습 기록", "📊 학습 통계", "✨ 단어 일괄 추가", "🔥 오답 노트 재도전", "🏆 테스트 결과 기록"
@@ -185,7 +202,9 @@ AI_PROMPT_RULES = """
 [형식]: 영단어;[ 발음기호 ];품사별 핵심 뜻;실전 예문 (예문은 1개만)
 """
 
-# ----------------- 🤖 AI 단어 생성 -----------------
+# ----------------- (🤖 AI 단어 생성 ~ 📖 단어 관리 생략 - 기존과 동일) -----------------
+# 코드가 너무 길어지는 것을 방지하기 위해 중간 메뉴 로직은 원본 그대로 유지됩니다.
+# (🤖 AI 단어 생성, ✨ 수동 일괄 추가, 📖 단어 관리, 📅 학습 기록 메뉴 등)
 if menu == "🤖 AI 단어 생성":
     st.header("🤖 AI 맞춤 자동 생성")
     category = st.selectbox("학습 목표", ["일반 생활 영단어", "경찰 공무원 영단어", "토익 (TOEIC) 영단어"])
@@ -205,7 +224,6 @@ if menu == "🤖 AI 단어 생성":
             except Exception as e:
                 st.error(f"❌ 생성 오류:\n{e}")
 
-# ----------------- ✨ 수동 일괄 추가 -----------------
 elif menu == "✨ 단어 일괄 추가":
     st.header("✨ 단어 일괄 추가")
     words_input = st.text_area("단어를 쉼표(,)로 구분해 입력하세요.")
@@ -222,7 +240,6 @@ elif menu == "✨ 단어 일괄 추가":
                 except Exception as e:
                     st.error(f"❌ 오류:\n{e}")
 
-# ----------------- 📖 단어 관리 / 학습 기록 -----------------
 elif menu in ["📖 단어 관리", "📅 학습 기록"]:
     status_filter = 'Learning' if menu == "📖 단어 관리" else 'Completed'
     st.header(menu)
@@ -302,7 +319,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
         )
         st.divider()
 
-        # ⭐️ 테스트 데이터 초기화 (상세 내역 보관용 리스트 추가)
         if 'test_menu' not in st.session_state or st.session_state.test_menu != menu:
             st.session_state.test_menu = menu
             st.session_state.prev_result = None
@@ -316,8 +332,8 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
             st.session_state.test_total_count = len(queue)
             st.session_state.test_correct_count = 0
             st.session_state.test_incorrect_count = 0
-            st.session_state.current_test_details = [] # 문제별 상세 내역
-            st.session_state.test_saved = False # 결과 저장 여부 플래그
+            st.session_state.current_test_details = []
+            st.session_state.test_saved = False
 
         if st.session_state.prev_result:
             res = st.session_state.prev_result
@@ -330,9 +346,7 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
 
         st.divider()
 
-        # ⭐️ [핵심 추가] 테스트 종료 화면 및 결과 리포트 출력
         if not st.session_state.test_queue:
-            # 1) JSON 파일에 현재 시험 결과 영구 저장
             if not st.session_state.get('test_saved'):
                 test_record = {
                     "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -343,14 +357,13 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                     "details": st.session_state.current_test_details
                 }
                 history = load_test_history()
-                history.insert(0, test_record) # 최신 순 정렬
+                history.insert(0, test_record)
                 save_test_history(history)
                 st.session_state.test_saved = True
 
             st.balloons()
             st.success("🎉 준비된 모든 단어의 테스트가 끝났습니다! 수고하셨습니다.")
             
-            # 2) 대시보드 출력
             st.subheader("📊 테스트 결과 요약")
             c1, c2, c3 = st.columns(3)
             c1.metric("📝 총 문제", f"{st.session_state.test_total_count}개")
@@ -358,20 +371,16 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
             c3.metric("❌ 오답", f"{st.session_state.test_incorrect_count}개")
             st.divider()
             
-            # 3) 상세 결과지(시험지) 출력
             st.subheader("📋 전체 문제 풀이 결과")
             for i, detail in enumerate(st.session_state.current_test_details, 1):
                 status_mark = "✅ (정답)" if detail['is_correct'] else "❌ (오답)"
                 st.markdown(f"**문제 {i}. {status_mark}**")
                 st.markdown(f"> **{detail['word']}** {detail['phonetic']} | {detail['meaning']}")
                 
-                # 오답이면 빨간색으로, 정답이면 일반색으로 표시
                 disp_eng = detail['user_eng'] if detail['eng_correct'] else f"**:red[{detail['user_eng']}]**"
                 disp_kor = detail['user_kor'] if detail['kor_correct'] else f"**:red[{detail['user_kor']}]**"
-                
-                # 답안 출력 포맷: 영어 | 한글
                 st.markdown(f"**답안:** {disp_eng} | {disp_kor}")
-                st.write("") # 간격 띄우기
+                st.write("") 
 
             st.divider()
             if st.button("🔄 처음부터 다시 풀기"):
@@ -411,11 +420,12 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
 
             st.write(f"📝 남은 문제: {len(st.session_state.test_queue)}개")
             
+            # ⭐️ 수정됨: LISTEN 모드일 때 2.5초 반복 음성 자동 실행 (버튼 제거)
             if test_mode == 'LISTEN':
                 st.subheader("Q: 🎧 소리를 듣고 영단어와 뜻을 적어주세요!")
-                st.info("💡 아래 [문제 발음 듣기] 버튼을 누르세요.")
-                if st.button("🔊 문제 발음 듣기", key=f"listen_btn_{current_word_str}"):
-                    speak(word_info['Word'])
+                st.info("💡 2.5초 간격으로 단어가 무한 반복 재생 중입니다.")
+                # 화면에 그려질 때마다 반복 재생 함수 즉시 호출
+                speak(word_info['Word'], loop=True)
             elif test_mode == 'E2K':
                 st.subheader(f"Q: {word_info['Word']} {word_info['Phonetic']}")
                 st.caption("이 단어의 뜻은?")
@@ -425,14 +435,90 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
 
             with st.form(key=f"test_form_{current_word_str}", clear_on_submit=True):
                 if test_mode == 'LISTEN':
-                    ans_eng = st.text_input("✍️ 영어 단어 (스펠링) 입력")
-                    ans_kor = st.text_input("✍️ 한글 뜻 입력")
+                    ans_eng = st.text_input("✍️ 영어 단어 (스펠링) 입력", key=f"eng_{current_word_str}")
+                    ans_kor = st.text_input("✍️ 한글 뜻 입력", key=f"kor_{current_word_str}")
                 else:
                     ans = st.text_input("✍️ 정답을 입력하고 엔터(Enter)를 누르세요.")
                     
                 submitted = st.form_submit_button("제출")
+                
+                # ⭐️ [핵심 추가] JS 인젝션 스크립트 (자동완성 끄기 + 포커스 + Inko.js 한영 강제)
+                is_listen_str = 'true' if test_mode == 'LISTEN' else 'false'
                 focus_idx = 2 if test_mode == 'LISTEN' else 1
-                components.html(f"<script>const inputs = window.parent.document.querySelectorAll('input[type=\"text\"]'); if (inputs.length >= {focus_idx}) {{ inputs[inputs.length - {focus_idx}].focus(); }}</script>", height=0, width=0)
+                
+                js_script = f"""
+                <script>
+                // 스트림릿 메인 창 DOM 접근
+                const parentDoc = window.parent.document;
+                const inputs = parentDoc.querySelectorAll('div[data-testid="stForm"] input[type="text"]');
+                
+                // 1. 자동완성 방지 및 포커스 설정
+                if (inputs.length > 0) {{
+                    const targetFocus = inputs[inputs.length - {focus_idx}];
+                    if (targetFocus) targetFocus.focus();
+                    
+                    inputs.forEach(inp => {{
+                        inp.setAttribute('autocomplete', 'off');
+                        inp.setAttribute('spellcheck', 'false');
+                        inp.setAttribute('autocorrect', 'off');
+                    }});
+                }}
+
+                // 2. LISTEN 모드일 때 한/영 강제 변환 세팅 (Inko.js 사용)
+                if ({is_listen_str}) {{
+                    if (!parentDoc.getElementById('inko-script')) {{
+                        const script = parentDoc.createElement('script');
+                        script.id = 'inko-script';
+                        script.src = 'https://cdn.jsdelivr.net/npm/inko@1.1.1/inko.min.js';
+                        parentDoc.head.appendChild(script);
+                    }}
+
+                    function applyInko() {{
+                        // inko.js가 로드될 때까지 재귀 호출
+                        if (!window.parent.Inko) {{
+                            setTimeout(applyInko, 100);
+                            return;
+                        }}
+                        const inko = new window.parent.Inko();
+                        const currentInputs = parentDoc.querySelectorAll('div[data-testid="stForm"] input[type="text"]');
+                        
+                        if (currentInputs.length >= 2) {{
+                            const engInput = currentInputs[currentInputs.length - 2];
+                            const korInput = currentInputs[currentInputs.length - 1];
+                            
+                            // 스트림릿(React) 상태 업데이트를 위한 Native Setter
+                            const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+
+                            // 영단어 칸: 한글을 쳐도 무조건 영어가 나오게
+                            if (!engInput.dataset.inkoBound) {{
+                                engInput.addEventListener('input', function(e) {{
+                                    const converted = inko.ko2en(e.target.value);
+                                    if (e.target.value !== converted) {{
+                                        nativeSetter.call(engInput, converted);
+                                        engInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                    }}
+                                }});
+                                engInput.dataset.inkoBound = 'true';
+                            }}
+
+                            // 한글뜻 칸: 영어를 쳐도 무조건 한글이 나오게
+                            if (!korInput.dataset.inkoBound) {{
+                                korInput.addEventListener('input', function(e) {{
+                                    const converted = inko.en2ko(e.target.value);
+                                    if (e.target.value !== converted) {{
+                                        nativeSetter.call(korInput, converted);
+                                        korInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                    }}
+                                }});
+                                korInput.dataset.inkoBound = 'true';
+                            }}
+                        }}
+                    }}
+                    applyInko();
+                }}
+                </script>
+                """
+                components.html(js_script, height=0, width=0)
 
                 if submitted:
                     if test_mode == 'LISTEN' and (not ans_eng.strip() or not ans_kor.strip()):
@@ -440,7 +526,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                     elif test_mode != 'LISTEN' and not ans.strip():
                         st.warning("⚠️ 정답을 입력해주세요!")
                     else:
-                        # ⭐️ [핵심 로직] 정답 채점 및 부위별 오답 확인
                         correct = False
                         is_eng_correct = True
                         is_kor_correct = True
@@ -495,7 +580,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                                 wrong_df = pd.concat([wrong_df, new_wrong], ignore_index=True)
                                 save_data(wrong_df, WRONG_FILE)
                         
-                        # ⭐️ 문제 상세 내역 저장 (빈칸은 '(빈칸)' 처리)
                         st.session_state.current_test_details.append({
                             "word": word_info['Word'],
                             "phonetic": word_info['Phonetic'],
@@ -508,7 +592,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                             "mode": test_mode
                         })
 
-                        # 화면 상단 알림용 임시 데이터
                         display_ans = f"{u_eng} | {u_kor}" if test_mode == 'LISTEN' else ans
                         st.session_state.prev_result = {
                             'correct': correct, 'word': word_info['Word'], 'meaning': word_info['Meaning'],
@@ -520,7 +603,7 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                             del st.session_state.current_test_mode
                         st.rerun()
 
-# ----------------- 🏆 테스트 결과 기록 (새로운 메뉴) -----------------
+# ----------------- (🏆 테스트 결과 기록 ~ 마지막 통계/가이드 생략 - 기존과 동일) -----------------
 elif menu == "🏆 테스트 결과 기록":
     st.header("🏆 내 테스트 기록 보관함")
     st.write("과거에 진행했던 테스트 결과와 오답 노트를 한눈에 볼 수 있습니다.")
@@ -530,7 +613,6 @@ elif menu == "🏆 테스트 결과 기록":
     if not history_data:
         st.info("아직 저장된 테스트 기록이 없습니다. 먼저 실전 테스트를 완료해 보세요!")
     else:
-        # 최신 순으로 출력 (이미 insert(0, )로 저장되어 있음)
         for h_idx, record in enumerate(history_data):
             expander_title = f"🗓️ {record['date']} | {record['type']} | 총 {record['total']}문제 | 정답 {record['correct']} / 오답 {record['incorrect']}"
             with st.expander(expander_title):
@@ -553,7 +635,6 @@ elif menu == "🏆 테스트 결과 기록":
                     st.markdown(f"**답안:** {disp_eng} | {disp_kor}")
                     st.write("") 
 
-# ----------------- 📊 학습 통계 -----------------
 elif menu == "📊 학습 통계":
     st.header("📊 내 학습 통계")
     st.subheader(f"📚 전체 누적 단어: {len(df)}개")
@@ -691,3 +772,5 @@ elif menu == "📚 영어 기초 가이드":
         **■ 4. 수동태 (be동사 + p.p)**
         주어가 행동을 당할 때 사용.
         """)
+
+# 기초영어 가이드는 내용이 길어 기존 코드 그대로 두시면 됩니다!
