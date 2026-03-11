@@ -202,9 +202,6 @@ AI_PROMPT_RULES = """
 [형식]: 영단어;[ 발음기호 ];품사별 핵심 뜻;실전 예문 (예문은 1개만)
 """
 
-# ----------------- (🤖 AI 단어 생성 ~ 📖 단어 관리 생략 - 기존과 동일) -----------------
-# 코드가 너무 길어지는 것을 방지하기 위해 중간 메뉴 로직은 원본 그대로 유지됩니다.
-# (🤖 AI 단어 생성, ✨ 수동 일괄 추가, 📖 단어 관리, 📅 학습 기록 메뉴 등)
 if menu == "🤖 AI 단어 생성":
     st.header("🤖 AI 맞춤 자동 생성")
     category = st.selectbox("학습 목표", ["일반 생활 영단어", "경찰 공무원 영단어", "토익 (TOEIC) 영단어"])
@@ -420,11 +417,9 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
 
             st.write(f"📝 남은 문제: {len(st.session_state.test_queue)}개")
             
-            # ⭐️ 수정됨: LISTEN 모드일 때 2.5초 반복 음성 자동 실행 (버튼 제거)
             if test_mode == 'LISTEN':
                 st.subheader("Q: 🎧 소리를 듣고 영단어와 뜻을 적어주세요!")
                 st.info("💡 2.5초 간격으로 단어가 무한 반복 재생 중입니다.")
-                # 화면에 그려질 때마다 반복 재생 함수 즉시 호출
                 speak(word_info['Word'], loop=True)
             elif test_mode == 'E2K':
                 st.subheader(f"Q: {word_info['Word']} {word_info['Phonetic']}")
@@ -442,17 +437,14 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                     
                 submitted = st.form_submit_button("제출")
                 
-                # ⭐️ [핵심 추가] JS 인젝션 스크립트 (자동완성 끄기 + 포커스 + Inko.js 한영 강제)
                 is_listen_str = 'true' if test_mode == 'LISTEN' else 'false'
                 focus_idx = 2 if test_mode == 'LISTEN' else 1
                 
                 js_script = f"""
                 <script>
-                // 스트림릿 메인 창 DOM 접근
                 const parentDoc = window.parent.document;
                 const inputs = parentDoc.querySelectorAll('div[data-testid="stForm"] input[type="text"]');
                 
-                // 1. 자동완성 방지 및 포커스 설정
                 if (inputs.length > 0) {{
                     const targetFocus = inputs[inputs.length - {focus_idx}];
                     if (targetFocus) targetFocus.focus();
@@ -464,7 +456,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                     }});
                 }}
 
-                // 2. LISTEN 모드일 때 한/영 강제 변환 세팅 (Inko.js 사용)
                 if ({is_listen_str}) {{
                     if (!parentDoc.getElementById('inko-script')) {{
                         const script = parentDoc.createElement('script');
@@ -474,7 +465,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                     }}
 
                     function applyInko() {{
-                        // inko.js가 로드될 때까지 재귀 호출
                         if (!window.parent.Inko) {{
                             setTimeout(applyInko, 100);
                             return;
@@ -486,10 +476,8 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                             const engInput = currentInputs[currentInputs.length - 2];
                             const korInput = currentInputs[currentInputs.length - 1];
                             
-                            // 스트림릿(React) 상태 업데이트를 위한 Native Setter
                             const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
 
-                            // 영단어 칸: 한글을 쳐도 무조건 영어가 나오게
                             if (!engInput.dataset.inkoBound) {{
                                 engInput.addEventListener('input', function(e) {{
                                     const converted = inko.ko2en(e.target.value);
@@ -501,7 +489,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                                 engInput.dataset.inkoBound = 'true';
                             }}
 
-                            // 한글뜻 칸: 영어를 쳐도 무조건 한글이 나오게
                             if (!korInput.dataset.inkoBound) {{
                                 korInput.addEventListener('input', function(e) {{
                                     const converted = inko.en2ko(e.target.value);
@@ -521,89 +508,84 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                 components.html(js_script, height=0, width=0)
 
                 if submitted:
-                    if test_mode == 'LISTEN' and (not ans_eng.strip() or not ans_kor.strip()):
-                        st.warning("⚠️ 영어 단어와 한글 뜻을 모두 입력해주세요!")
-                    elif test_mode != 'LISTEN' and not ans.strip():
-                        st.warning("⚠️ 정답을 입력해주세요!")
-                    else:
-                        correct = False
-                        is_eng_correct = True
-                        is_kor_correct = True
-                        u_eng = ""
-                        u_kor = ""
-                        
-                        clean_meaning_full = re.sub(r'[\s\(\)\[\]\,\/]', '', word_info['Meaning'])
-                        for tag in ["명사", "동사", "대명사", "형용사", "부사", "전치사", "접속사", "감탄사", ":"]:
-                            clean_meaning_full = clean_meaning_full.replace(tag, "")
+                    # 💡 빈칸 확인 및 경고창 로직(st.warning) 삭제! 이제 빈칸이어도 바로 채점 로직으로 넘어갑니다.
+                    correct = False
+                    is_eng_correct = True
+                    is_kor_correct = True
+                    u_eng = ""
+                    u_kor = ""
+                    
+                    clean_meaning_full = re.sub(r'[\s\(\)\[\]\,\/]', '', word_info['Meaning'])
+                    for tag in ["명사", "동사", "대명사", "형용사", "부사", "전치사", "접속사", "감탄사", ":"]:
+                        clean_meaning_full = clean_meaning_full.replace(tag, "")
 
-                        if test_mode == 'E2K':
-                            u_eng = word_info['Word']
-                            u_kor = ans
-                            clean_ans = re.sub(r'[\s\(\)\[\]\,\/]', '', ans)
-                            if clean_ans and clean_ans in clean_meaning_full:
-                                correct = True
-                            else:
-                                is_kor_correct = False
-                            
-                        elif test_mode == 'K2E':
-                            u_eng = ans
-                            u_kor = word_info['Meaning']
-                            if re.sub(r'[^a-zA-Z]', '', ans).lower() == re.sub(r'[^a-zA-Z]', '', word_info['Word']).lower():
-                                correct = True
-                            else:
-                                is_eng_correct = False
-                            
-                        elif test_mode == 'LISTEN':
-                            u_eng = ans_eng
-                            u_kor = ans_kor
-                            clean_ans_eng = re.sub(r'[^a-zA-Z]', '', ans_eng).lower()
-                            clean_word = re.sub(r'[^a-zA-Z]', '', word_info['Word']).lower()
-                            clean_ans_kor = re.sub(r'[\s\(\)\[\]\,\/]', '', ans_kor)
-                            
-                            if clean_ans_eng == clean_word: is_eng_correct = True
-                            else: is_eng_correct = False
-                                
-                            if clean_ans_kor and clean_ans_kor in clean_meaning_full: is_kor_correct = True
-                            else: is_kor_correct = False
-                                
-                            if is_eng_correct and is_kor_correct: correct = True
-
-                        if correct:
-                            st.session_state.test_correct_count += 1
-                            if word_info['Word'] in wrong_df['Word'].values:
-                                wrong_df = wrong_df[wrong_df['Word'] != word_info['Word']]
-                                save_data(wrong_df, WRONG_FILE)
+                    if test_mode == 'E2K':
+                        u_eng = word_info['Word']
+                        u_kor = ans
+                        clean_ans = re.sub(r'[\s\(\)\[\]\,\/]', '', ans)
+                        if clean_ans and clean_ans in clean_meaning_full:
+                            correct = True
                         else:
-                            st.session_state.test_incorrect_count += 1
-                            if word_info['Word'] not in wrong_df['Word'].values:
-                                new_wrong = pd.DataFrame([word_info.to_dict()])
-                                wrong_df = pd.concat([wrong_df, new_wrong], ignore_index=True)
-                                save_data(wrong_df, WRONG_FILE)
+                            is_kor_correct = False
                         
-                        st.session_state.current_test_details.append({
-                            "word": word_info['Word'],
-                            "phonetic": word_info['Phonetic'],
-                            "meaning": word_info['Meaning'],
-                            "user_eng": u_eng if u_eng.strip() else "(빈칸)",
-                            "user_kor": u_kor if u_kor.strip() else "(빈칸)",
-                            "is_correct": correct,
-                            "eng_correct": is_eng_correct,
-                            "kor_correct": is_kor_correct,
-                            "mode": test_mode
-                        })
+                    elif test_mode == 'K2E':
+                        u_eng = ans
+                        u_kor = word_info['Meaning']
+                        if ans.strip() and re.sub(r'[^a-zA-Z]', '', ans).lower() == re.sub(r'[^a-zA-Z]', '', word_info['Word']).lower():
+                            correct = True
+                        else:
+                            is_eng_correct = False
+                        
+                    elif test_mode == 'LISTEN':
+                        u_eng = ans_eng
+                        u_kor = ans_kor
+                        clean_ans_eng = re.sub(r'[^a-zA-Z]', '', ans_eng).lower()
+                        clean_word = re.sub(r'[^a-zA-Z]', '', word_info['Word']).lower()
+                        clean_ans_kor = re.sub(r'[\s\(\)\[\]\,\/]', '', ans_kor)
+                        
+                        if clean_ans_eng and clean_ans_eng == clean_word: is_eng_correct = True
+                        else: is_eng_correct = False
+                            
+                        if clean_ans_kor and clean_ans_kor in clean_meaning_full: is_kor_correct = True
+                        else: is_kor_correct = False
+                            
+                        if is_eng_correct and is_kor_correct: correct = True
 
-                        display_ans = f"{u_eng} | {u_kor}" if test_mode == 'LISTEN' else ans
-                        st.session_state.prev_result = {
-                            'correct': correct, 'word': word_info['Word'], 'meaning': word_info['Meaning'],
-                            'example': word_info['Example'], 'user_ans': display_ans, 'mode': test_mode
-                        }
-                        st.session_state.audio_played = False
-                        st.session_state.test_queue.pop(0) 
-                        if 'current_test_mode' in st.session_state:
-                            del st.session_state.current_test_mode
-                        st.rerun()
+                    if correct:
+                        st.session_state.test_correct_count += 1
+                        if word_info['Word'] in wrong_df['Word'].values:
+                            wrong_df = wrong_df[wrong_df['Word'] != word_info['Word']]
+                            save_data(wrong_df, WRONG_FILE)
+                    else:
+                        st.session_state.test_incorrect_count += 1
+                        if word_info['Word'] not in wrong_df['Word'].values:
+                            new_wrong = pd.DataFrame([word_info.to_dict()])
+                            wrong_df = pd.concat([wrong_df, new_wrong], ignore_index=True)
+                            save_data(wrong_df, WRONG_FILE)
+                    
+                    st.session_state.current_test_details.append({
+                        "word": word_info['Word'],
+                        "phonetic": word_info['Phonetic'],
+                        "meaning": word_info['Meaning'],
+                        "user_eng": u_eng if u_eng.strip() else "(빈칸)",
+                        "user_kor": u_kor if u_kor.strip() else "(빈칸)",
+                        "is_correct": correct,
+                        "eng_correct": is_eng_correct,
+                        "kor_correct": is_kor_correct,
+                        "mode": test_mode
+                    })
 
-# ----------------- (🏆 테스트 결과 기록 ~ 마지막 통계/가이드 생략 - 기존과 동일) -----------------
+                    display_ans = f"{u_eng} | {u_kor}" if test_mode == 'LISTEN' else ans
+                    st.session_state.prev_result = {
+                        'correct': correct, 'word': word_info['Word'], 'meaning': word_info['Meaning'],
+                        'example': word_info['Example'], 'user_ans': display_ans, 'mode': test_mode
+                    }
+                    st.session_state.audio_played = False
+                    st.session_state.test_queue.pop(0) 
+                    if 'current_test_mode' in st.session_state:
+                        del st.session_state.current_test_mode
+                    st.rerun()
+
 elif menu == "🏆 테스트 결과 기록":
     st.header("🏆 내 테스트 기록 보관함")
     st.write("과거에 진행했던 테스트 결과와 오답 노트를 한눈에 볼 수 있습니다.")
@@ -772,5 +754,3 @@ elif menu == "📚 영어 기초 가이드":
         **■ 4. 수동태 (be동사 + p.p)**
         주어가 행동을 당할 때 사용.
         """)
-
-# 기초영어 가이드는 내용이 길어 기존 코드 그대로 두시면 됩니다!
