@@ -11,6 +11,14 @@ import time
 from datetime import datetime
 import streamlit.components.v1 as components
 
+# ⭐️ 한/영 자동 변환 라이브러리 (requirements.txt 에 inko 필수)
+try:
+    from inko import Inko
+    myInko = Inko()
+except ImportError:
+    st.error("🚨 `inko` 라이브러리가 설치되지 않았습니다. requirements.txt 파일에 'inko'를 추가해주세요!")
+    st.stop()
+
 # ==========================================
 # 🔑 제미나이 API 키 설정 (보안 금고 연동)
 try:
@@ -23,7 +31,7 @@ except Exception:
 
 VOCAB_FILE = 'my_vocab_web.csv'
 WRONG_FILE = 'my_vocab_wrong_web.csv'
-TEST_HISTORY_FILE = 'my_test_history_web.json' # ⭐️ 시험 결과 저장용 파일
+TEST_HISTORY_FILE = 'my_test_history_web.json'
 
 # ----------------- 🛠️ 핵심 함수 정의 -----------------
 def get_ai_response(prompt):
@@ -93,7 +101,6 @@ def parse_and_add_words(response_text, df, category, level):
         df = pd.concat([df, new_df], ignore_index=True).drop_duplicates('Word')
     return df, len(new_rows)
 
-# ⭐️ 수정됨: loop 옵션 추가 (2.5초 간격 무한 반복 기능)
 def speak(text, loop=False):
     pure_text = text.split('[')[0].strip()
     try:
@@ -113,7 +120,7 @@ def speak(text, loop=False):
                     audioEl.onended = function() {{
                         setTimeout(() => {{
                             audioEl.play().catch(e => console.log(e));
-                        }}, 2500); // 2.5초 대기 후 재생
+                        }}, 2500); 
                     }};
                 </script>
                 """
@@ -165,6 +172,24 @@ def render_mobile_table(headers, data, font_size="14px"):
 # ----------------- 🖥️ UI 세팅 및 시스템 제어 -----------------
 st.set_page_config(page_title="AI 영단어 마스터", layout="centered")
 st.title("🦉 AI 영단어 마스터 Web")
+
+# ⭐️ 글로벌 JS 주입: 모든 Input과 Textarea의 빨간 밑줄(spellcheck) 강제 제거
+components.html(
+    """
+    <script>
+    const parentDoc = window.parent.document;
+    function disableSpellcheck() {
+        const elements = parentDoc.querySelectorAll('input[type="text"], textarea');
+        elements.forEach(el => {
+            el.setAttribute('spellcheck', 'false');
+            el.setAttribute('autocomplete', 'off');
+        });
+    }
+    disableSpellcheck();
+    setInterval(disableSpellcheck, 1000); // 리렌더링 대비 1초마다 지속 확인
+    </script>
+    """, height=0, width=0
+)
 
 st.sidebar.title("메뉴")
 menu = st.sidebar.selectbox("메뉴 선택", [
@@ -437,78 +462,20 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                     
                 submitted = st.form_submit_button("제출")
                 
-                is_listen_str = 'true' if test_mode == 'LISTEN' else 'false'
+                # ⭐️ 빈칸 강제 포커스 (키보드 즉시 적용 스크립트)
                 focus_idx = 2 if test_mode == 'LISTEN' else 1
-                
-                js_script = f"""
+                components.html(f"""
                 <script>
                 const parentDoc = window.parent.document;
                 const inputs = parentDoc.querySelectorAll('div[data-testid="stForm"] input[type="text"]');
-                
                 if (inputs.length > 0) {{
                     const targetFocus = inputs[inputs.length - {focus_idx}];
-                    if (targetFocus) targetFocus.focus();
-                    
-                    inputs.forEach(inp => {{
-                        inp.setAttribute('autocomplete', 'off');
-                        inp.setAttribute('spellcheck', 'false');
-                        inp.setAttribute('autocorrect', 'off');
-                    }});
-                }}
-
-                if ({is_listen_str}) {{
-                    if (!parentDoc.getElementById('inko-script')) {{
-                        const script = parentDoc.createElement('script');
-                        script.id = 'inko-script';
-                        script.src = 'https://cdn.jsdelivr.net/npm/inko@1.1.1/inko.min.js';
-                        parentDoc.head.appendChild(script);
-                    }}
-
-                    function applyInko() {{
-                        if (!window.parent.Inko) {{
-                            setTimeout(applyInko, 100);
-                            return;
-                        }}
-                        const inko = new window.parent.Inko();
-                        const currentInputs = parentDoc.querySelectorAll('div[data-testid="stForm"] input[type="text"]');
-                        
-                        if (currentInputs.length >= 2) {{
-                            const engInput = currentInputs[currentInputs.length - 2];
-                            const korInput = currentInputs[currentInputs.length - 1];
-                            
-                            const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-
-                            if (!engInput.dataset.inkoBound) {{
-                                engInput.addEventListener('input', function(e) {{
-                                    const converted = inko.ko2en(e.target.value);
-                                    if (e.target.value !== converted) {{
-                                        nativeSetter.call(engInput, converted);
-                                        engInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                    }}
-                                }});
-                                engInput.dataset.inkoBound = 'true';
-                            }}
-
-                            if (!korInput.dataset.inkoBound) {{
-                                korInput.addEventListener('input', function(e) {{
-                                    const converted = inko.en2ko(e.target.value);
-                                    if (e.target.value !== converted) {{
-                                        nativeSetter.call(korInput, converted);
-                                        korInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                    }}
-                                }});
-                                korInput.dataset.inkoBound = 'true';
-                            }}
-                        }}
-                    }}
-                    applyInko();
+                    if (targetFocus) setTimeout(() => targetFocus.focus(), 100);
                 }}
                 </script>
-                """
-                components.html(js_script, height=0, width=0)
+                """, height=0, width=0)
 
                 if submitted:
-                    # 💡 빈칸 확인 및 경고창 로직(st.warning) 삭제! 이제 빈칸이어도 바로 채점 로직으로 넘어갑니다.
                     correct = False
                     is_eng_correct = True
                     is_kor_correct = True
@@ -519,29 +486,35 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                     for tag in ["명사", "동사", "대명사", "형용사", "부사", "전치사", "접속사", "감탄사", ":"]:
                         clean_meaning_full = clean_meaning_full.replace(tag, "")
 
+                    # ⭐️ inko 한영 자동 변환 적용 로직
                     if test_mode == 'E2K':
                         u_eng = word_info['Word']
-                        u_kor = ans
-                        clean_ans = re.sub(r'[\s\(\)\[\]\,\/]', '', ans)
+                        converted_ans = myInko.en2ko(ans) # 강제로 한글 변환
+                        u_kor = converted_ans
+                        clean_ans = re.sub(r'[\s\(\)\[\]\,\/]', '', converted_ans)
                         if clean_ans and clean_ans in clean_meaning_full:
                             correct = True
                         else:
                             is_kor_correct = False
                         
                     elif test_mode == 'K2E':
-                        u_eng = ans
+                        converted_ans = myInko.ko2en(ans) # 강제로 영어 변환
+                        u_eng = converted_ans
                         u_kor = word_info['Meaning']
-                        if ans.strip() and re.sub(r'[^a-zA-Z]', '', ans).lower() == re.sub(r'[^a-zA-Z]', '', word_info['Word']).lower():
+                        if converted_ans.strip() and re.sub(r'[^a-zA-Z]', '', converted_ans).lower() == re.sub(r'[^a-zA-Z]', '', word_info['Word']).lower():
                             correct = True
                         else:
                             is_eng_correct = False
                         
                     elif test_mode == 'LISTEN':
-                        u_eng = ans_eng
-                        u_kor = ans_kor
-                        clean_ans_eng = re.sub(r'[^a-zA-Z]', '', ans_eng).lower()
+                        converted_eng = myInko.ko2en(ans_eng) # 영어칸 강제 변환
+                        converted_kor = myInko.en2ko(ans_kor) # 한글칸 강제 변환
+                        u_eng = converted_eng
+                        u_kor = converted_kor
+                        
+                        clean_ans_eng = re.sub(r'[^a-zA-Z]', '', converted_eng).lower()
                         clean_word = re.sub(r'[^a-zA-Z]', '', word_info['Word']).lower()
-                        clean_ans_kor = re.sub(r'[\s\(\)\[\]\,\/]', '', ans_kor)
+                        clean_ans_kor = re.sub(r'[\s\(\)\[\]\,\/]', '', converted_kor)
                         
                         if clean_ans_eng and clean_ans_eng == clean_word: is_eng_correct = True
                         else: is_eng_correct = False
@@ -575,7 +548,7 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                         "mode": test_mode
                     })
 
-                    display_ans = f"{u_eng} | {u_kor}" if test_mode == 'LISTEN' else ans
+                    display_ans = f"{u_eng} | {u_kor}" if test_mode == 'LISTEN' else u_kor if test_mode == 'E2K' else u_eng
                     st.session_state.prev_result = {
                         'correct': correct, 'word': word_info['Word'], 'meaning': word_info['Meaning'],
                         'example': word_info['Example'], 'user_ans': display_ans, 'mode': test_mode
@@ -665,7 +638,7 @@ elif menu == "📚 영어 기초 가이드":
         st.markdown("""
         단어들을 역할과 기능에 따라 8가지로 분류한 '재료'입니다.
         1. **명사 (Noun)** : 사람, 사물, 개념의 이름. *(apple, love, desk)*
-        2. **대명사 (Pronoun)** : 명사를 대신 부르는 말. *(he, she, it, they)*
+        2. **대명사 (Pronoun)** : 명사를 대신 부르는 말. *(he, she, it, 단수)*
         3. **동사 (Verb)** : 동작이나 상태 (~다). *(run, eat, is)*
         4. **형용사 (Adjective)** : 명사의 상태를 꾸며줌 (~한). *(pretty, happy)*
         5. **부사 (Adverb)** : 동사나 형용사를 꾸며줌 (~하게). *(quickly, very)*
