@@ -11,14 +11,6 @@ import time
 from datetime import datetime
 import streamlit.components.v1 as components
 
-# ⭐️ 한/영 자동 변환 라이브러리 (requirements.txt 에 inko 필수)
-try:
-    from inko import Inko
-    myInko = Inko()
-except ImportError:
-    st.error("🚨 `inko` 라이브러리가 설치되지 않았습니다. requirements.txt 파일에 'inko'를 추가해주세요!")
-    st.stop()
-
 # ==========================================
 # 🔑 제미나이 API 키 설정 (보안 금고 연동)
 try:
@@ -32,6 +24,30 @@ except Exception:
 VOCAB_FILE = 'my_vocab_web.csv'
 WRONG_FILE = 'my_vocab_wrong_web.csv'
 TEST_HISTORY_FILE = 'my_test_history_web.json'
+
+# ----------------- 💡 자체 제작: 한/영 오타 자동 채점기 (외부 패키지 X) -----------------
+# 사용자가 'rkskekfk'나 '물ㅣㄷ' 처럼 한/영 키를 잘못 치더라도 
+# 내부적으로 동일한 키보드 타자 배열(Qwerty)로 변환하여 찰떡같이 정답을 맞춥니다.
+CHO = ['r', 'R', 's', 'e', 'E', 'f', 'a', 'q', 'Q', 't', 'T', 'd', 'w', 'W', 'c', 'z', 'x', 'v', 'g']
+JUNG = ['k', 'o', 'i', 'O', 'j', 'p', 'u', 'P', 'h', 'hk', 'ho', 'hl', 'y', 'n', 'nj', 'np', 'nl', 'b', 'm', 'ml', 'l']
+JONG = ['', 'r', 'R', 'rt', 's', 'sw', 'sg', 'e', 'f', 'fr', 'fa', 'fq', 'ft', 'fx', 'fv', 'fg', 'a', 'q', 'qt', 't', 'T', 'd', 'w', 'c', 'z', 'x', 'v', 'g']
+COMPAT_JAMO = {
+    'ㄱ':'r', 'ㄲ':'R', 'ㄳ':'rt', 'ㄴ':'s', 'ㄵ':'sw', 'ㄶ':'sg', 'ㄷ':'e', 'ㄸ':'E', 'ㄹ':'f', 'ㄺ':'fr', 'ㄻ':'fa', 'ㄼ':'fq', 'ㄽ':'ft', 'ㄾ':'fx', 'ㄿ':'fv', 'ㅀ':'fg', 'ㅁ':'a', 'ㅂ':'q', 'ㅃ':'Q', 'ㅄ':'qt', 'ㅅ':'t', 'ㅆ':'T', 'ㅇ':'d', 'ㅈ':'w', 'ㅉ':'W', 'ㅊ':'c', 'ㅋ':'z', 'ㅌ':'x', 'ㅍ':'v', 'ㅎ':'g',
+    'ㅏ':'k', 'ㅐ':'o', 'ㅑ':'i', 'ㅒ':'O', 'ㅓ':'j', 'ㅔ':'p', 'ㅕ':'u', 'ㅖ':'P', 'ㅗ':'h', 'ㅘ':'hk', 'ㅙ':'ho', 'ㅚ':'hl', 'ㅛ':'y', 'ㅜ':'n', 'ㅝ':'nj', 'ㅞ':'np', 'ㅟ':'nl', 'ㅠ':'b', 'ㅡ':'m', 'ㅢ':'ml', 'ㅣ':'l'
+}
+
+def get_qwerty(text):
+    if not text: return ""
+    res = ""
+    for c in text:
+        if '가' <= c <= '힣':
+            offset = ord(c) - 44032
+            res += CHO[offset // 588] + JUNG[(offset % 588) // 28] + JONG[offset % 28]
+        elif c in COMPAT_JAMO:
+            res += COMPAT_JAMO[c]
+        else:
+            res += c
+    return res.lower().replace(" ", "")
 
 # ----------------- 🛠️ 핵심 함수 정의 -----------------
 def get_ai_response(prompt):
@@ -479,50 +495,48 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                     correct = False
                     is_eng_correct = True
                     is_kor_correct = True
-                    u_eng = ""
-                    u_kor = ""
+                    
+                    u_eng = ans_eng if test_mode == 'LISTEN' else (ans if test_mode == 'K2E' else word_info['Word'])
+                    u_kor = ans_kor if test_mode == 'LISTEN' else (ans if test_mode == 'E2K' else word_info['Meaning'])
                     
                     clean_meaning_full = re.sub(r'[\s\(\)\[\]\,\/]', '', word_info['Meaning'])
                     for tag in ["명사", "동사", "대명사", "형용사", "부사", "전치사", "접속사", "감탄사", ":"]:
                         clean_meaning_full = clean_meaning_full.replace(tag, "")
 
-                    # ⭐️ inko 한영 자동 변환 적용 로직
+                    # ⭐️ 핵심: 사용자가 입력한 값을 모두 영문 타자 배열(Qwerty)로 치환 후 정답 비교
                     if test_mode == 'E2K':
-                        u_eng = word_info['Word']
-                        converted_ans = myInko.en2ko(ans) # 강제로 한글 변환
-                        u_kor = converted_ans
-                        clean_ans = re.sub(r'[\s\(\)\[\]\,\/]', '', converted_ans)
-                        if clean_ans and clean_ans in clean_meaning_full:
+                        ans_q = get_qwerty(ans)
+                        mean_q = get_qwerty(clean_meaning_full)
+                        if ans_q and ans_q in mean_q:
                             correct = True
                         else:
                             is_kor_correct = False
                         
                     elif test_mode == 'K2E':
-                        converted_ans = myInko.ko2en(ans) # 강제로 영어 변환
-                        u_eng = converted_ans
-                        u_kor = word_info['Meaning']
-                        if converted_ans.strip() and re.sub(r'[^a-zA-Z]', '', converted_ans).lower() == re.sub(r'[^a-zA-Z]', '', word_info['Word']).lower():
+                        ans_q = get_qwerty(ans)
+                        word_q = get_qwerty(word_info['Word'])
+                        if ans_q and ans_q == word_q:
                             correct = True
                         else:
                             is_eng_correct = False
                         
                     elif test_mode == 'LISTEN':
-                        converted_eng = myInko.ko2en(ans_eng) # 영어칸 강제 변환
-                        converted_kor = myInko.en2ko(ans_kor) # 한글칸 강제 변환
-                        u_eng = converted_eng
-                        u_kor = converted_kor
-                        
-                        clean_ans_eng = re.sub(r'[^a-zA-Z]', '', converted_eng).lower()
-                        clean_word = re.sub(r'[^a-zA-Z]', '', word_info['Word']).lower()
-                        clean_ans_kor = re.sub(r'[\s\(\)\[\]\,\/]', '', converted_kor)
-                        
-                        if clean_ans_eng and clean_ans_eng == clean_word: is_eng_correct = True
-                        else: is_eng_correct = False
+                        eng_q = get_qwerty(ans_eng)
+                        word_q = get_qwerty(word_info['Word'])
+                        if eng_q and eng_q == word_q:
+                            is_eng_correct = True
+                        else:
+                            is_eng_correct = False
                             
-                        if clean_ans_kor and clean_ans_kor in clean_meaning_full: is_kor_correct = True
-                        else: is_kor_correct = False
+                        kor_q = get_qwerty(ans_kor)
+                        mean_q = get_qwerty(clean_meaning_full)
+                        if kor_q and kor_q in mean_q:
+                            is_kor_correct = True
+                        else:
+                            is_kor_correct = False
                             
-                        if is_eng_correct and is_kor_correct: correct = True
+                        if is_eng_correct and is_kor_correct: 
+                            correct = True
 
                     if correct:
                         st.session_state.test_correct_count += 1
@@ -548,7 +562,7 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                         "mode": test_mode
                     })
 
-                    display_ans = f"{u_eng} | {u_kor}" if test_mode == 'LISTEN' else u_kor if test_mode == 'E2K' else u_eng
+                    display_ans = f"{u_eng} | {u_kor}" if test_mode == 'LISTEN' else (ans if ans.strip() else "(빈칸)")
                     st.session_state.prev_result = {
                         'correct': correct, 'word': word_info['Word'], 'meaning': word_info['Meaning'],
                         'example': word_info['Example'], 'user_ans': display_ans, 'mode': test_mode
