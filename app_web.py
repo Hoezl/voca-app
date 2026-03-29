@@ -26,8 +26,6 @@ WRONG_FILE = 'my_vocab_wrong_web.csv'
 TEST_HISTORY_FILE = 'my_test_history_web.json'
 
 # ----------------- 💡 자체 제작: 한/영 오타 자동 채점기 (외부 패키지 X) -----------------
-# 사용자가 'rkskekfk'나 '물ㅣㄷ' 처럼 한/영 키를 잘못 치더라도 
-# 내부적으로 동일한 키보드 타자 배열(Qwerty)로 변환하여 찰떡같이 정답을 맞춥니다.
 CHO = ['r', 'R', 's', 'e', 'E', 'f', 'a', 'q', 'Q', 't', 'T', 'd', 'w', 'W', 'c', 'z', 'x', 'v', 'g']
 JUNG = ['k', 'o', 'i', 'O', 'j', 'p', 'u', 'P', 'h', 'hk', 'ho', 'hl', 'y', 'n', 'nj', 'np', 'nl', 'b', 'm', 'ml', 'l']
 JONG = ['', 'r', 'R', 'rt', 's', 'sw', 'sg', 'e', 'f', 'fr', 'fa', 'fq', 'ft', 'fx', 'fv', 'fg', 'a', 'q', 'qt', 't', 'T', 'd', 'w', 'c', 'z', 'x', 'v', 'g']
@@ -80,6 +78,10 @@ def load_data(file_path):
 
 def save_data(df, file_path):
     df.to_csv(file_path, index=False, encoding='utf-8-sig')
+
+# ⭐️ 추가됨: 엑셀 파일 다운로드를 위한 변환 함수 (한글 깨짐 방지)
+def convert_df_to_csv(df):
+    return df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
 
 def load_test_history():
     if os.path.exists(TEST_HISTORY_FILE):
@@ -189,7 +191,6 @@ def render_mobile_table(headers, data, font_size="14px"):
 st.set_page_config(page_title="AI 영단어 마스터", layout="centered")
 st.title("🦉 AI 영단어 마스터 Web")
 
-# ⭐️ 글로벌 JS 주입: 모든 Input과 Textarea의 빨간 밑줄(spellcheck) 강제 제거
 components.html(
     """
     <script>
@@ -202,7 +203,7 @@ components.html(
         });
     }
     disableSpellcheck();
-    setInterval(disableSpellcheck, 1000); // 리렌더링 대비 1초마다 지속 확인
+    setInterval(disableSpellcheck, 1000); 
     </script>
     """, height=0, width=0
 )
@@ -262,27 +263,74 @@ if menu == "🤖 AI 단어 생성":
             except Exception as e:
                 st.error(f"❌ 생성 오류:\n{e}")
 
+# ⭐️ 수정됨: 단어 일괄 추가 (메모장/엑셀 붙여넣기 기능 강화 & 파일 업로드 추가)
 elif menu == "✨ 단어 일괄 추가":
     st.header("✨ 단어 일괄 추가")
-    words_input = st.text_area("단어를 쉼표(,)로 구분해 입력하세요.")
-    if st.button("✅ 분석 및 추가"):
-        if words_input:
-            prompt = f"단어: {words_input}\n{AI_PROMPT_RULES}"
-            with st.spinner("AI가 입력하신 단어의 모든 품사를 스캔 중입니다..."):
-                try:
-                    response = get_ai_response(prompt)
-                    df, added_count = parse_and_add_words(response.text, df, '수동 추가', '-')
-                    if added_count > 0:
-                        save_data(df, VOCAB_FILE)
-                        st.success("다품사 분석 및 추가 완료!")
-                except Exception as e:
-                    st.error(f"❌ 오류:\n{e}")
+    st.write("인터넷, 메모장, 엑셀에서 복사한 영단어 목록을 손쉽게 추가하세요.")
+    
+    tab1, tab2 = st.tabs(["✍️ 텍스트 복사/붙여넣기", "📁 엑셀(CSV) 파일 업로드"])
+    
+    with tab1:
+        st.info("💡 엑셀 세로줄을 그대로 복사해서 붙여넣으셔도 자동으로 인식합니다!")
+        words_input = st.text_area("영단어 목록 입력 (쉼표나 줄바꿈으로 구분)", height=150)
+        if st.button("✅ 텍스트 분석 및 추가"):
+            if words_input:
+                # 줄바꿈과 탭을 쉼표로 변환하여 AI가 인식하기 쉽게 처리
+                clean_words = words_input.replace('\n', ',').replace('\t', ',')
+                prompt = f"단어: {clean_words}\n{AI_PROMPT_RULES}"
+                with st.spinner("AI가 입력하신 단어의 모든 품사를 스캔 중입니다..."):
+                    try:
+                        response = get_ai_response(prompt)
+                        df, added_count = parse_and_add_words(response.text, df, '수동 추가', '-')
+                        if added_count > 0:
+                            save_data(df, VOCAB_FILE)
+                            st.success(f"🎉 {added_count}개 단어의 다품사 분석 및 추가 완료!")
+                    except Exception as e:
+                        st.error(f"❌ 오류:\n{e}")
+                        
+    with tab2:
+        uploaded_file = st.file_uploader("단어 목록이 담긴 엑셀(CSV) 파일을 올려주세요.", type=['csv'])
+        if uploaded_file is not None:
+            try:
+                # 업로드된 CSV 파일에서 첫 번째 열(보통 영단어) 추출
+                uploaded_df = pd.read_csv(uploaded_file)
+                first_column_words = uploaded_df.iloc[:, 0].dropna().astype(str).tolist()
+                words_from_csv = ", ".join(first_column_words)
+                
+                st.write(f"추출된 단어 ({len(first_column_words)}개):")
+                st.caption(words_from_csv[:100] + "...")
+                
+                if st.button("✅ CSV 단어 분석 및 추가"):
+                    prompt = f"단어: {words_from_csv}\n{AI_PROMPT_RULES}"
+                    with st.spinner("AI가 CSV 안의 단어 품사를 스캔 중입니다..."):
+                        response = get_ai_response(prompt)
+                        df, added_count = parse_and_add_words(response.text, df, 'CSV 추가', '-')
+                        if added_count > 0:
+                            save_data(df, VOCAB_FILE)
+                            st.success(f"🎉 CSV에서 {added_count}개의 단어 추가 완료!")
+            except Exception as e:
+                st.error("파일을 읽는 중 문제가 발생했습니다. CSV 형식을 확인해주세요.")
 
+# ⭐️ 수정됨: 단어 관리에 엑셀 다운로드 버튼 추가
 elif menu in ["📖 단어 관리", "📅 학습 기록"]:
     status_filter = 'Learning' if menu == "📖 단어 관리" else 'Completed'
-    st.header(menu)
-    view_df = df[df['Status'] == status_filter].sort_values('Date', ascending=False)
     
+    col_header, col_btn = st.columns([6, 4])
+    with col_header:
+        st.header(menu)
+    with col_btn:
+        st.write("") # 간격 맞추기
+        view_df = df[df['Status'] == status_filter].sort_values('Date', ascending=False)
+        if not view_df.empty:
+            csv_data = convert_df_to_csv(view_df)
+            st.download_button(
+                label="📥 엑셀(CSV) 내보내기",
+                data=csv_data,
+                file_name=f"my_words_{status_filter}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+            
     if view_df.empty:
         st.info("해당하는 단어가 없습니다.")
     else:
@@ -337,9 +385,24 @@ elif menu in ["📖 단어 관리", "📅 학습 기록"]:
 
 # ----------------- 📝 실전 테스트 & 🔥 오답 노트 재도전 -----------------
 elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
-    st.header(menu)
     is_wrong_mode = (menu == "🔥 오답 노트 재도전")
     current_pool = wrong_df if is_wrong_mode else df[df['Status'] == 'Learning']
+    
+    # ⭐️ 수정됨: 오답 노트 메뉴에 엑셀 다운로드 버튼 추가
+    col_header, col_btn = st.columns([6, 4])
+    with col_header:
+        st.header(menu)
+    with col_btn:
+        st.write("")
+        if is_wrong_mode and not current_pool.empty:
+            wrong_csv_data = convert_df_to_csv(current_pool)
+            st.download_button(
+                label="📥 오답 목록 엑셀(CSV) 추출",
+                data=wrong_csv_data,
+                file_name="my_wrong_words.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
     
     if current_pool.empty:
         if is_wrong_mode: st.success("🎉 오답 노트가 비어있습니다! 완벽합니다!")
@@ -478,7 +541,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                     
                 submitted = st.form_submit_button("제출")
                 
-                # ⭐️ 빈칸 강제 포커스 (키보드 즉시 적용 스크립트)
                 focus_idx = 2 if test_mode == 'LISTEN' else 1
                 components.html(f"""
                 <script>
@@ -503,7 +565,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                     for tag in ["명사", "동사", "대명사", "형용사", "부사", "전치사", "접속사", "감탄사", ":"]:
                         clean_meaning_full = clean_meaning_full.replace(tag, "")
 
-                    # ⭐️ 핵심: 사용자가 입력한 값을 모두 영문 타자 배열(Qwerty)로 치환 후 정답 비교
                     if test_mode == 'E2K':
                         ans_q = get_qwerty(ans)
                         mean_q = get_qwerty(clean_meaning_full)
