@@ -79,7 +79,6 @@ def load_data(file_path):
 def save_data(df, file_path):
     df.to_csv(file_path, index=False, encoding='utf-8-sig')
 
-# ⭐️ 추가됨: 엑셀 파일 다운로드를 위한 변환 함수 (한글 깨짐 방지)
 def convert_df_to_csv(df):
     return df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
 
@@ -233,14 +232,15 @@ if st.sidebar.button("🧹 시스템 캐시 및 오류 초기화"):
 df = load_data(VOCAB_FILE)
 wrong_df = load_data(WRONG_FILE)
 
+# ⭐️ 수정됨: AI 프롬프트 4번 항목 업그레이드 (뉘앙스 추가 강제)
 AI_PROMPT_RULES = """
 [초강력 중요 규칙]
 1. 번호나 리스트 표시 절대 금지. 줄바꿈 없이 한 단어당 한 줄로만 작성.
 2. 영단어에 절대 ** 기호 금지.
 3. 발음 기호: 국제음성기호(IPA) 표준을 따르고 반드시 대괄호 양옆에 공백을 한 칸씩 넣을 것! (예: [ klɑːs ])
-4. 다품사 강제 & 핵심 요약(⭐️): 단어의 모든 주요 품사(명사, 동사, 형용사 등)를 찾되, 뜻은 품사별 1~2개만 간결하게 요약.
+4. 다품사 강제 & 뉘앙스 구분(⭐️): 뜻이 비슷한 유의어와 혼동되지 않도록, 뜻 앞에 괄호 ( )를 쳐서 뉘앙스나 쓰임새를 무조건 포함해서 요약해주세요.
+   - 예: (내용을) 말하다 / (언어를/공식적으로) 말하다 / (정보를) 알리다
    - 같은 품사 내 뜻은 쉼표(,), 품사가 바뀌면 슬래시(/)로 구분
-   - (예: 명사 : 아래층 / 부사 : 아래층으로)
 [형식]: 영단어;[ 발음기호 ];품사별 핵심 뜻;실전 예문 (예문은 1개만)
 """
 
@@ -253,7 +253,7 @@ if menu == "🤖 AI 단어 생성":
     if st.button("🚀 단어 생성 시작"):
         existing_words = ", ".join(df['Word'].tolist())
         prompt = f"당신은 1타 영어 강사입니다.\n분야: {category} / 난이도: {level} / {count}개 생성.\n중복 제외: {existing_words}\n{AI_PROMPT_RULES}"
-        with st.spinner("AI가 단어의 모든 품사를 스캔하여 요약 중입니다..."):
+        with st.spinner("AI가 단어의 모든 품사와 뉘앙스를 스캔하여 요약 중입니다..."):
             try:
                 response = get_ai_response(prompt)
                 df, added_count = parse_and_add_words(response.text, df, category, level)
@@ -263,7 +263,6 @@ if menu == "🤖 AI 단어 생성":
             except Exception as e:
                 st.error(f"❌ 생성 오류:\n{e}")
 
-# ⭐️ 수정됨: 단어 일괄 추가 (메모장/엑셀 붙여넣기 기능 강화 & 파일 업로드 추가)
 elif menu == "✨ 단어 일괄 추가":
     st.header("✨ 단어 일괄 추가")
     st.write("인터넷, 메모장, 엑셀에서 복사한 영단어 목록을 손쉽게 추가하세요.")
@@ -275,7 +274,6 @@ elif menu == "✨ 단어 일괄 추가":
         words_input = st.text_area("영단어 목록 입력 (쉼표나 줄바꿈으로 구분)", height=150)
         if st.button("✅ 텍스트 분석 및 추가"):
             if words_input:
-                # 줄바꿈과 탭을 쉼표로 변환하여 AI가 인식하기 쉽게 처리
                 clean_words = words_input.replace('\n', ',').replace('\t', ',')
                 prompt = f"단어: {clean_words}\n{AI_PROMPT_RULES}"
                 with st.spinner("AI가 입력하신 단어의 모든 품사를 스캔 중입니다..."):
@@ -292,7 +290,6 @@ elif menu == "✨ 단어 일괄 추가":
         uploaded_file = st.file_uploader("단어 목록이 담긴 엑셀(CSV) 파일을 올려주세요.", type=['csv'])
         if uploaded_file is not None:
             try:
-                # 업로드된 CSV 파일에서 첫 번째 열(보통 영단어) 추출
                 uploaded_df = pd.read_csv(uploaded_file)
                 first_column_words = uploaded_df.iloc[:, 0].dropna().astype(str).tolist()
                 words_from_csv = ", ".join(first_column_words)
@@ -311,7 +308,6 @@ elif menu == "✨ 단어 일괄 추가":
             except Exception as e:
                 st.error("파일을 읽는 중 문제가 발생했습니다. CSV 형식을 확인해주세요.")
 
-# ⭐️ 수정됨: 단어 관리에 엑셀 다운로드 버튼 추가
 elif menu in ["📖 단어 관리", "📅 학습 기록"]:
     status_filter = 'Learning' if menu == "📖 단어 관리" else 'Completed'
     
@@ -319,7 +315,7 @@ elif menu in ["📖 단어 관리", "📅 학습 기록"]:
     with col_header:
         st.header(menu)
     with col_btn:
-        st.write("") # 간격 맞추기
+        st.write("") 
         view_df = df[df['Status'] == status_filter].sort_values('Date', ascending=False)
         if not view_df.empty:
             csv_data = convert_df_to_csv(view_df)
@@ -388,7 +384,6 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
     is_wrong_mode = (menu == "🔥 오답 노트 재도전")
     current_pool = wrong_df if is_wrong_mode else df[df['Status'] == 'Learning']
     
-    # ⭐️ 수정됨: 오답 노트 메뉴에 엑셀 다운로드 버튼 추가
     col_header, col_btn = st.columns([6, 4])
     with col_header:
         st.header(menu)
@@ -525,12 +520,23 @@ elif menu in ["📝 실전 테스트", "🔥 오답 노트 재도전"]:
                 st.subheader("Q: 🎧 소리를 듣고 영단어와 뜻을 적어주세요!")
                 st.info("💡 2.5초 간격으로 단어가 무한 반복 재생 중입니다.")
                 speak(word_info['Word'], loop=True)
+                
             elif test_mode == 'E2K':
                 st.subheader(f"Q: {word_info['Word']} {word_info['Phonetic']}")
                 st.caption("이 단어의 뜻은?")
+                
+            # ⭐️ 수정됨: 영단어 맞추기 모드에서 예문 블라인드 힌트 제공
             else:
                 st.subheader(f"Q: {word_info['Meaning']}")
                 st.caption("해당하는 영어 단어는?")
+                try:
+                    word_len = len(word_info['Word'])
+                    blank_str = "_" * word_len
+                    # 예문에서 정답 단어를 밑줄로 치환
+                    hint_example = re.sub(rf"\b{word_info['Word']}\b", blank_str, str(word_info['Example']), flags=re.IGNORECASE)
+                    st.info(f"💡 힌트(예문): {hint_example} (시작 알파벳: **{word_info['Word'][0].upper()}**)")
+                except:
+                    st.info(f"💡 힌트: 시작 알파벳 '**{word_info['Word'][0].upper()}**'")
 
             with st.form(key=f"test_form_{current_word_str}", clear_on_submit=True):
                 if test_mode == 'LISTEN':
